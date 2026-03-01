@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VAPT Report — http://demo.testfire.net</title>
+  <style>
+    :root {
+      --critical: #dc2626; --high: #ea580c; --medium: #ca8a04;
+      --low: #16a34a; --info: #2563eb;
+      --bg: #0f172a; --surface: #1e293b; --surface2: #273344;
+      --text: #e2e8f0; --muted: #94a3b8; --border: #334155;
+      --confirmed: #16a34a; --fp: #6b7280; --inconclusive: #ca8a04;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+    /* Header */
+    .report-header { border-bottom: 2px solid var(--border); padding-bottom: 2rem; margin-bottom: 2.5rem; }
+    .report-header h1 { font-size: 2rem; font-weight: 700; color: #f1f5f9; }
+    .report-header .meta { color: var(--muted); font-size: 0.9rem; margin-top: 0.5rem; }
+    .report-header .meta span { margin-right: 1.5rem; }
+
+    /* Risk badge */
+    .risk-badge { display: inline-block; padding: 0.35rem 1rem; border-radius: 999px; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .risk-Critical { background: var(--critical); color: #fff; }
+    .risk-High { background: var(--high); color: #fff; }
+    .risk-Medium { background: var(--medium); color: #fff; }
+    .risk-Low { background: var(--low); color: #fff; }
+
+    /* Section */
+    section { margin-bottom: 3rem; }
+    section h2 { font-size: 1.3rem; font-weight: 600; margin-bottom: 1rem; color: #f1f5f9; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+
+    /* Executive summary */
+    .exec-summary { background: var(--surface); border-radius: 10px; padding: 1.5rem; border-left: 4px solid var(--medium); }
+    .exec-summary p { color: var(--text); }
+
+    /* Stats grid */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; }
+    .stat-card { background: var(--surface); border-radius: 10px; padding: 1.25rem; text-align: center; border: 1px solid var(--border); }
+    .stat-card .count { font-size: 2.2rem; font-weight: 700; }
+    .stat-card .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+    .count-Critical { color: var(--critical); }
+    .count-High { color: var(--high); }
+    .count-Medium { color: var(--medium); }
+    .count-Low { color: var(--low); }
+    .count-Informational { color: var(--info); }
+    .count-confirmed { color: var(--confirmed); }
+    .count-fp { color: var(--fp); }
+    .count-inconclusive { color: var(--inconclusive); }
+
+    /* Finding cards */
+    .finding-card { background: var(--surface); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.25rem; border: 1px solid var(--border); }
+    .finding-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; }
+    .finding-header h3 { font-size: 1rem; font-weight: 600; color: #f1f5f9; flex: 1; }
+    .sev-badge { display: inline-block; padding: 0.2rem 0.7rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; white-space: nowrap; }
+    .sev-Critical { background: rgba(220,38,38,0.2); color: var(--critical); border: 1px solid var(--critical); }
+    .sev-High { background: rgba(234,88,12,0.2); color: var(--high); border: 1px solid var(--high); }
+    .sev-Medium { background: rgba(202,138,4,0.2); color: var(--medium); border: 1px solid var(--medium); }
+    .sev-Low { background: rgba(22,163,74,0.2); color: var(--low); border: 1px solid var(--low); }
+    .sev-Informational { background: rgba(37,99,235,0.2); color: var(--info); border: 1px solid var(--info); }
+    .finding-url { font-size: 0.82rem; color: var(--muted); font-family: monospace; margin-bottom: 0.75rem; word-break: break-all; }
+    .finding-section { margin-top: 0.75rem; }
+    .finding-section label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .finding-section p { color: var(--text); font-size: 0.92rem; margin-top: 0.2rem; }
+    .finding-meta { display: flex; gap: 1.5rem; margin-top: 0.75rem; font-size: 0.82rem; color: var(--muted); }
+    .pt-status { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.7rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
+    .pt-confirmed { background: rgba(22,163,74,0.2); color: var(--confirmed); border: 1px solid var(--confirmed); }
+    .pt-false_positive { background: rgba(107,114,128,0.2); color: var(--fp); border: 1px solid var(--fp); }
+    .pt-inconclusive { background: rgba(202,138,4,0.2); color: var(--inconclusive); border: 1px solid var(--inconclusive); }
+
+    /* Key findings / recommendations list */
+    .bullet-list { list-style: none; padding: 0; }
+    .bullet-list li { padding: 0.6rem 0.75rem; background: var(--surface2); border-radius: 6px; margin-bottom: 0.5rem; font-size: 0.92rem; display: flex; align-items: flex-start; gap: 0.5rem; }
+    .bullet-list li::before { content: "→"; color: var(--medium); font-weight: 700; flex-shrink: 0; }
+
+    /* Footer */
+    footer { border-top: 1px solid var(--border); padding-top: 1.5rem; margin-top: 2rem; font-size: 0.82rem; color: var(--muted); text-align: center; }
+
+    @media print { body { background: #fff; color: #111; } .container { padding: 0; } }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="report-header">
+    <h1>Vulnerability Assessment &amp; Penetration Testing Report</h1>
+    <div class="meta">
+      <span><strong>Target:</strong> http://demo.testfire.net</span>
+      <span><strong>Session:</strong> dfa21668</span>
+      <span><strong>Started:</strong> 2026-03-01 15:32:09 UTC</span>
+      
+      
+      <div style="margin-top:0.75rem;">
+        Overall Risk: <span class="risk-badge risk-Low">Low</span>
+      </div>
+      
+    </div>
+  </div>
+
+  <!-- Executive Summary -->
+  
+  <section>
+    <h2>Executive Summary</h2>
+    <div class="exec-summary"><p>The Vulnerability Assessment and Penetration Testing (VAPT) conducted during the deployment phase revealed several potential security issues. However, upon further investigation, all findings were determined to be false positives due to the lack of supporting evidence. This indicates that the current security posture is robust, but continuous monitoring and adherence to best practices are recommended to maintain security integrity.</p></div>
+  </section>
+  
+
+  <!-- Severity Dashboard -->
+  <section>
+    <h2>Scan Overview</h2>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="count count-Critical">0</div><div class="label">Critical</div></div>
+      <div class="stat-card"><div class="count count-High">0</div><div class="label">High</div></div>
+      <div class="stat-card"><div class="count count-Medium">3</div><div class="label">Medium</div></div>
+      <div class="stat-card"><div class="count count-Low">4</div><div class="label">Low</div></div>
+      <div class="stat-card"><div class="count count-Informational">1</div><div class="label">Info</div></div>
+      
+      <div class="stat-card"><div class="count count-confirmed">0</div><div class="label">PT Confirmed</div></div>
+      <div class="stat-card"><div class="count count-fp">8</div><div class="label">False Positive</div></div>
+      <div class="stat-card"><div class="count count-inconclusive">0</div><div class="label">Inconclusive</div></div>
+      
+    </div>
+  </section>
+
+  <!-- Key Findings -->
+  
+  <section>
+    <h2>Key Findings</h2>
+    <ul class="bullet-list">
+      
+      <li>Session Management Response Identified</li>
+      
+      <li>Content Security Policy (CSP) Header Not Set</li>
+      
+      <li>Missing Anti-clickjacking Header</li>
+      
+      <li>Cookie without SameSite Attribute</li>
+      
+      <li>Server Leaks Version Information via &#34;Server&#34; HTTP Response Header Field</li>
+      
+      <li>X-Content-Type-Options Header Missing</li>
+      
+      <li>Absence of Anti-CSRF Tokens</li>
+      
+      <li>Cross-Domain JavaScript Source File Inclusion</li>
+      
+    </ul>
+  </section>
+  
+
+  <!-- Detailed Findings -->
+  <section>
+    <h2>Detailed Findings</h2>
+    
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Content Security Policy (CSP) Header Not Set</h3>
+          <span class="sev-badge sev-Severity.MEDIUM">Severity.MEDIUM</span>
+          
+            
+            <span class="pt-status pt-false_positive">PT: False Positive</span>
+          
+        </div>
+        <div class="finding-url">http://demo.testfire.net/sitemap.xml</div>
+        <div class="finding-meta">
+          <span>CWE: 693</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The absence of a Content Security Policy (CSP) header means the website is more vulnerable to certain types of attacks, such as Cross Site Scripting (XSS). Implementing CSP can help protect against these threats by specifying which sources of content are trusted.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>Content Security Policy (CSP) is an added layer of security that helps to detect and mitigate certain types of attacks, including Cross Site Scripting (XSS) and data injection attacks. These attacks are used for everything from data theft to site defacement or distribution of malware. CSP provides a set of standard HTTP headers that allow website owners to declare approved sources of content that browsers should be allowed to load on that page.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that your web server, application server, load balancer, etc. is configured to set the Content-Security-Policy header.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence is empty, indicating that there is no supporting evidence to confirm the absence of a Content Security Policy (CSP) header on the specified URL. Without evidence, this finding cannot be confirmed as a vulnerability.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Missing Anti-clickjacking Header</h3>
+          <span class="sev-badge sev-Severity.MEDIUM">Severity.MEDIUM</span>
+          
+            
+            <span class="pt-status pt-false_positive">PT: False Positive</span>
+          
+        </div>
+        <div class="finding-url">http://demo.testfire.net/index.jsp</div>
+        <div class="finding-meta">
+          <span>CWE: 1021</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>Without an anti-clickjacking header, your website is vulnerable to clickjacking attacks, where malicious sites can trick users into clicking on something different from what they perceive, potentially leading to unauthorized actions.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The response does not protect against &#39;ClickJacking&#39; attacks. It should include either Content-Security-Policy with &#39;frame-ancestors&#39; directive or X-Frame-Options.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Modern Web browsers support the Content-Security-Policy and X-Frame-Options HTTP headers. Ensure one of them is set on all web pages returned by your site/app.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence is empty, which means there is no supporting evidence to confirm the presence of the Missing Anti-clickjacking Header vulnerability. Without evidence, we cannot verify the vulnerability.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Absence of Anti-CSRF Tokens</h3>
+          <span class="sev-badge sev-Severity.MEDIUM">Severity.MEDIUM</span>
+          
+            
+            <span class="pt-status pt-false_positive">PT: False Positive</span>
+          
+        </div>
+        <div class="finding-url">http://demo.testfire.net/subscribe.jsp</div>
+        <div class="finding-meta">
+          <span>CWE: 352</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The absence of Anti-CSRF tokens means that the application is vulnerable to Cross-Site Request Forgery attacks, where attackers can trick users into performing actions they did not intend. Implementing these tokens can help prevent such attacks.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>No Anti-CSRF tokens were found in a HTML submission form. A cross-site request forgery is an attack that involves forcing a victim to send an HTTP request to a target destination without their knowledge or intent in order to perform an action as the victim.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Use a vetted library or framework that does not allow this weakness to occur or provides constructs that make this weakness easier to avoid.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence provided is empty, indicating that no supporting evidence was found to confirm the absence of Anti-CSRF tokens. Without evidence, this finding cannot be confirmed as a vulnerability.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Cookie without SameSite Attribute</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-false_positive">PT: False Positive</span>
+          
+        </div>
+        <div class="finding-url">http://demo.testfire.net/sitemap.xml</div>
+        <div class="finding-meta">
+          <span>CWE: 1275</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>Cookies without the SameSite attribute can be sent with cross-site requests, which might expose the site to certain types of attacks like cross-site request forgery. Adding this attribute helps enhance security by restricting how cookies are sent with requests.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>A cookie has been set without the SameSite attribute, which means that the cookie can be sent as a result of a &#39;cross-site&#39; request. The SameSite attribute is an effective counter measure to cross-site request forgery, cross-site script inclusion, and timing attacks.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that the SameSite attribute is set to either &#39;lax&#39; or ideally &#39;strict&#39; for all cookies.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence is empty, indicating that there is no supporting evidence for the vulnerability. Without evidence, we cannot confirm the presence of a cookie without the SameSite attribute.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Server Leaks Version Information via &#34;Server&#34; HTTP Response Header Field</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-false_positive">PT: False Positive</span>
+          
+        </div>
+        <div class="finding-url">http://demo.testfire.net/cgi.exe</div>
+        <div class="finding-meta">
+          <span>CWE: 497</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>Leaking server version information can help attackers identify vulnerabilities specific to that version. It&#39;s advisable to suppress this information to make it harder for attackers to target your server.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The web/application server is leaking version information via the &#34;Server&#34; HTTP response header. Access to such information may facilitate attackers identifying other vulnerabilities your web/application server is subject to.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that your web server, application server, load balancer, etc. is configured to suppress the &#34;Server&#34; header or provide generic details.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence is empty, indicating that there is no supporting evidence to confirm the presence of the vulnerability. Without evidence of the server leaking version information via the &#39;Server&#39; HTTP response header, this finding cannot be confirmed.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>X-Content-Type-Options Header Missing</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-false_positive">PT: False Positive</span>
+          
+        </div>
+        <div class="finding-url">http://demo.testfire.net/index.jsp?content=personal_checking.htm</div>
+        <div class="finding-meta">
+          <span>CWE: 693</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>Without the X-Content-Type-Options header set to &#39;nosniff&#39;, browsers might incorrectly interpret files as a different type, which could lead to security issues. Setting this header helps ensure that files are interpreted correctly.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The Anti-MIME-Sniffing header X-Content-Type-Options was not set to &#39;nosniff&#39;. This allows older versions of Internet Explorer and Chrome to perform MIME-sniffing on the response body, potentially causing the response body to be interpreted and displayed as a content type other than the declared content type.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that the application/web server sets the Content-Type header appropriately, and that it sets the X-Content-Type-Options header to &#39;nosniff&#39; for all web pages.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence is empty, indicating no supporting evidence was found for the missing X-Content-Type-Options header vulnerability.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Cross-Domain JavaScript Source File Inclusion</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-false_positive">PT: False Positive</span>
+          
+        </div>
+        <div class="finding-url">http://demo.testfire.net/index.jsp?content=personal_investments.htm</div>
+        <div class="finding-meta">
+          <span>CWE: 829</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>Including JavaScript files from third-party domains can introduce security risks if those sources are not trusted. It&#39;s important to ensure that all included scripts come from secure and trusted sources to prevent potential security issues.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The page includes one or more script files from a third-party domain.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure JavaScript source files are loaded from only trusted sources, and the sources can&#39;t be controlled by end users of the application.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence is empty, indicating that there is no supporting evidence for the vulnerability claim. Without evidence of third-party script inclusion, the vulnerability cannot be confirmed.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Session Management Response Identified</h3>
+          <span class="sev-badge sev-Severity.INFO">Severity.INFO</span>
+          
+            
+            <span class="pt-status pt-false_positive">PT: False Positive</span>
+          
+        </div>
+        <div class="finding-url">http://demo.testfire.net/robots.txt</div>
+        <div class="finding-meta">
+          
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>This alert indicates that the system has identified a session management token in the response. It&#39;s informational and doesn&#39;t require any action, as it doesn&#39;t pose a security risk.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The given response has been identified as containing a session management token. The &#39;Other Info&#39; field contains a set of header tokens that can be used in the Header Based Session Management Method. If the request is in a context which has a Session Management Method set to &#34;Auto-Detect&#34; then this rule will change the session management to use the tokens identified.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>This is an informational alert rather than a vulnerability and so there is nothing to fix.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence provided is empty, indicating that there is no supporting evidence for the presence of a session management token in the response from the URL http://demo.testfire.net/robots.txt. Without evidence, this finding cannot be confirmed.</p>
+          </div>
+          
+        
+      </div>
+      
+    
+  </section>
+
+  <!-- Recommendations -->
+  
+  <section>
+    <h2>Recommendations</h2>
+    <ul class="bullet-list">
+      
+      <li>Implement continuous security monitoring to ensure any real vulnerabilities are promptly identified and mitigated.</li>
+      
+      <li>Regularly update and patch systems to protect against known vulnerabilities.</li>
+      
+      <li>Ensure security best practices are followed, including setting appropriate HTTP headers such as Content Security Policy (CSP) and X-Content-Type-Options.</li>
+      
+      <li>Conduct regular security training for developers and IT staff to keep them informed about the latest security threats and mitigation strategies.</li>
+      
+      <li>Perform periodic security audits and penetration tests to validate the effectiveness of security controls.</li>
+      
+    </ul>
+  </section>
+  
+
+  <footer>
+    Generated by Agentic VAPT · Powered by OpenAI Codex + OWASP ZAP · In progress
+  </footer>
+
+</div>
+</body>
+</html>

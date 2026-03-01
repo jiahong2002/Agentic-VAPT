@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VAPT Report — http://testphp.vulnweb.com</title>
+  <style>
+    :root {
+      --critical: #dc2626; --high: #ea580c; --medium: #ca8a04;
+      --low: #16a34a; --info: #2563eb;
+      --bg: #0f172a; --surface: #1e293b; --surface2: #273344;
+      --text: #e2e8f0; --muted: #94a3b8; --border: #334155;
+      --confirmed: #16a34a; --fp: #6b7280; --inconclusive: #ca8a04;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+    /* Header */
+    .report-header { border-bottom: 2px solid var(--border); padding-bottom: 2rem; margin-bottom: 2.5rem; }
+    .report-header h1 { font-size: 2rem; font-weight: 700; color: #f1f5f9; }
+    .report-header .meta { color: var(--muted); font-size: 0.9rem; margin-top: 0.5rem; }
+    .report-header .meta span { margin-right: 1.5rem; }
+
+    /* Risk badge */
+    .risk-badge { display: inline-block; padding: 0.35rem 1rem; border-radius: 999px; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .risk-Critical { background: var(--critical); color: #fff; }
+    .risk-High { background: var(--high); color: #fff; }
+    .risk-Medium { background: var(--medium); color: #fff; }
+    .risk-Low { background: var(--low); color: #fff; }
+
+    /* Section */
+    section { margin-bottom: 3rem; }
+    section h2 { font-size: 1.3rem; font-weight: 600; margin-bottom: 1rem; color: #f1f5f9; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+
+    /* Executive summary */
+    .exec-summary { background: var(--surface); border-radius: 10px; padding: 1.5rem; border-left: 4px solid var(--medium); }
+    .exec-summary p { color: var(--text); }
+
+    /* Stats grid */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; }
+    .stat-card { background: var(--surface); border-radius: 10px; padding: 1.25rem; text-align: center; border: 1px solid var(--border); }
+    .stat-card .count { font-size: 2.2rem; font-weight: 700; }
+    .stat-card .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+    .count-Critical { color: var(--critical); }
+    .count-High { color: var(--high); }
+    .count-Medium { color: var(--medium); }
+    .count-Low { color: var(--low); }
+    .count-Informational { color: var(--info); }
+    .count-confirmed { color: var(--confirmed); }
+    .count-fp { color: var(--fp); }
+    .count-inconclusive { color: var(--inconclusive); }
+
+    /* Finding cards */
+    .finding-card { background: var(--surface); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.25rem; border: 1px solid var(--border); }
+    .finding-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; }
+    .finding-header h3 { font-size: 1rem; font-weight: 600; color: #f1f5f9; flex: 1; }
+    .sev-badge { display: inline-block; padding: 0.2rem 0.7rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; white-space: nowrap; }
+    .sev-Critical { background: rgba(220,38,38,0.2); color: var(--critical); border: 1px solid var(--critical); }
+    .sev-High { background: rgba(234,88,12,0.2); color: var(--high); border: 1px solid var(--high); }
+    .sev-Medium { background: rgba(202,138,4,0.2); color: var(--medium); border: 1px solid var(--medium); }
+    .sev-Low { background: rgba(22,163,74,0.2); color: var(--low); border: 1px solid var(--low); }
+    .sev-Informational { background: rgba(37,99,235,0.2); color: var(--info); border: 1px solid var(--info); }
+    .finding-url { font-size: 0.82rem; color: var(--muted); font-family: monospace; margin-bottom: 0.75rem; word-break: break-all; }
+    .finding-section { margin-top: 0.75rem; }
+    .finding-section label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .finding-section p { color: var(--text); font-size: 0.92rem; margin-top: 0.2rem; }
+    .finding-meta { display: flex; gap: 1.5rem; margin-top: 0.75rem; font-size: 0.82rem; color: var(--muted); }
+    .pt-status { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.7rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
+    .pt-confirmed { background: rgba(22,163,74,0.2); color: var(--confirmed); border: 1px solid var(--confirmed); }
+    .pt-false_positive { background: rgba(107,114,128,0.2); color: var(--fp); border: 1px solid var(--fp); }
+    .pt-inconclusive { background: rgba(202,138,4,0.2); color: var(--inconclusive); border: 1px solid var(--inconclusive); }
+
+    /* Key findings / recommendations list */
+    .bullet-list { list-style: none; padding: 0; }
+    .bullet-list li { padding: 0.6rem 0.75rem; background: var(--surface2); border-radius: 6px; margin-bottom: 0.5rem; font-size: 0.92rem; display: flex; align-items: flex-start; gap: 0.5rem; }
+    .bullet-list li::before { content: "→"; color: var(--medium); font-weight: 700; flex-shrink: 0; }
+
+    /* Footer */
+    footer { border-top: 1px solid var(--border); padding-top: 1.5rem; margin-top: 2rem; font-size: 0.82rem; color: var(--muted); text-align: center; }
+
+    @media print { body { background: #fff; color: #111; } .container { padding: 0; } }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="report-header">
+    <h1>Vulnerability Assessment &amp; Penetration Testing Report</h1>
+    <div class="meta">
+      <span><strong>Target:</strong> http://testphp.vulnweb.com</span>
+      <span><strong>Session:</strong> e7d4565f</span>
+      <span><strong>Started:</strong> 2026-03-01 15:08:22 UTC</span>
+      
+      
+      <div style="margin-top:0.75rem;">
+        Overall Risk: <span class="risk-badge risk-Medium">Medium</span>
+      </div>
+      
+    </div>
+  </div>
+
+  <!-- Executive Summary -->
+  
+  <section>
+    <h2>Executive Summary</h2>
+    <div class="exec-summary"><p>The Vulnerability Assessment and Penetration Testing (VAPT) conducted during the deployment phase identified several security vulnerabilities that could potentially expose the organization to risks. The assessment revealed a total of eight findings, with three rated as Medium severity and four as Low severity. The key issues include the absence of critical security headers such as Content Security Policy (CSP) and Anti-clickjacking headers, as well as the lack of Anti-CSRF tokens. Additionally, the server was found to be leaking version information through HTTP response headers, which could aid attackers in exploiting known vulnerabilities. These findings highlight the need for immediate remediation to enhance the security posture of the organization&#39;s web applications.</p></div>
+  </section>
+  
+
+  <!-- Severity Dashboard -->
+  <section>
+    <h2>Scan Overview</h2>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="count count-Critical">0</div><div class="label">Critical</div></div>
+      <div class="stat-card"><div class="count count-High">0</div><div class="label">High</div></div>
+      <div class="stat-card"><div class="count count-Medium">3</div><div class="label">Medium</div></div>
+      <div class="stat-card"><div class="count count-Low">4</div><div class="label">Low</div></div>
+      <div class="stat-card"><div class="count count-Informational">1</div><div class="label">Info</div></div>
+      
+      <div class="stat-card"><div class="count count-confirmed">6</div><div class="label">PT Confirmed</div></div>
+      <div class="stat-card"><div class="count count-fp">1</div><div class="label">False Positive</div></div>
+      <div class="stat-card"><div class="count count-inconclusive">1</div><div class="label">Inconclusive</div></div>
+      
+    </div>
+  </section>
+
+  <!-- Key Findings -->
+  
+  <section>
+    <h2>Key Findings</h2>
+    <ul class="bullet-list">
+      
+      <li>Content Security Policy (CSP) Header Not Set</li>
+      
+      <li>Missing Anti-clickjacking Header</li>
+      
+      <li>Absence of Anti-CSRF Tokens</li>
+      
+      <li>Server Leaks Version Information via &#34;Server&#34; HTTP Response Header Field</li>
+      
+      <li>X-Content-Type-Options Header Missing</li>
+      
+      <li>Server Leaks Information via &#34;X-Powered-By&#34; HTTP Response Header Field(s)</li>
+      
+    </ul>
+  </section>
+  
+
+  <!-- Detailed Findings -->
+  <section>
+    <h2>Detailed Findings</h2>
+    
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Content Security Policy (CSP) Header Not Set</h3>
+          <span class="sev-badge sev-Severity.MEDIUM">Severity.MEDIUM</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">http://testphp.vulnweb.com/robots.txt</div>
+        <div class="finding-meta">
+          <span>CWE: 693</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The website is missing a Content Security Policy (CSP) header, which is a security feature that helps prevent certain types of attacks like data theft and site defacement. Implementing CSP can significantly enhance the security of your website by controlling which resources can be loaded.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>Content Security Policy (CSP) is an added layer of security that helps to detect and mitigate certain types of attacks, including Cross Site Scripting (XSS) and data injection attacks. These attacks are used for everything from data theft to site defacement or distribution of malware. CSP provides a set of standard HTTP headers that allow website owners to declare approved sources of content that browsers should be allowed to load on that page — covered types are JavaScript, CSS, HTML frames, fonts, images and embeddable objects such as Java applets, ActiveX, audio and video files.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that your web server, application server, load balancer, etc. is configured to set the Content-Security-Policy header.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence shows that the Content Security Policy (CSP) header is not set for the URL http://testphp.vulnweb.com/robots.txt. This is confirmed by the absence of the CSP header in the HTTP response, which is a clear indication of the vulnerability.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Missing Anti-clickjacking Header</h3>
+          <span class="sev-badge sev-Severity.MEDIUM">Severity.MEDIUM</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">http://testphp.vulnweb.com/categories.php</div>
+        <div class="finding-meta">
+          <span>CWE: 1021</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The website is vulnerable to clickjacking attacks because it lacks the necessary headers to prevent it. Clickjacking can trick users into clicking on something different from what they perceive, potentially leading to unauthorized actions.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The response does not protect against &#39;ClickJacking&#39; attacks. It should include either Content-Security-Policy with &#39;frame-ancestors&#39; directive or X-Frame-Options.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Modern Web browsers support the Content-Security-Policy and X-Frame-Options HTTP headers. Ensure one of them is set on all web pages returned by your site/app.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence shows that the HTTP response for the URL in question lacks the necessary headers to protect against ClickJacking attacks. This confirms the vulnerability.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Absence of Anti-CSRF Tokens</h3>
+          <span class="sev-badge sev-Severity.MEDIUM">Severity.MEDIUM</span>
+          
+            
+            <span class="pt-status pt-inconclusive">PT: Inconclusive</span>
+          
+        </div>
+        <div class="finding-url">http://testphp.vulnweb.com</div>
+        <div class="finding-meta">
+          <span>CWE: 352</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The website does not use Anti-CSRF tokens, which are essential for preventing cross-site request forgery attacks. These attacks can trick users into performing actions they did not intend, potentially compromising their accounts or data.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>No Anti-CSRF tokens were found in a HTML submission form. A cross-site request forgery is an attack that involves forcing a victim to send an HTTP request to a target destination without their knowledge or intent in order to perform an action as the victim.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Use a vetted library or framework that does not allow this weakness to occur or provides constructs that make this weakness easier to avoid.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence provided does not contain any information related to the presence or absence of Anti-CSRF tokens in HTML forms. The evidence primarily discusses issues related to Content Security Policy (CSP) headers and Clickjacking protection, which are unrelated to CSRF protection. Without specific evidence of a form submission lacking Anti-CSRF tokens, the status of this vulnerability cannot be confirmed or denied.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>In Page Banner Information Leak</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">http://testphp.vulnweb.com/sitemap.xml</div>
+        <div class="finding-meta">
+          <span>CWE: 497</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The server is revealing its version information in the response headers. This information can be used by attackers to identify vulnerabilities specific to the server version, potentially leading to targeted attacks.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The server returned a version banner string in the response content. Such information leaks may allow attackers to further target specific issues impacting the product and version in use.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Configure the server to prevent such information leaks. For example, under Apache this is done via the &#34;ServerSignature&#34; and &#34;ServerTokens&#34; directives.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The evidence clearly shows that the server is leaking version information through the HTTP response header. The presence of &#39;nginx/1.19.0&#39; in the response confirms the information leak vulnerability.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Server Leaks Version Information via &#34;Server&#34; HTTP Response Header Field</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">http://testphp.vulnweb.com/images/logo.gif</div>
+        <div class="finding-meta">
+          <span>CWE: 497</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The server is leaking its version information through the HTTP response headers. This can help attackers identify vulnerabilities associated with the server version, increasing the risk of exploitation.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The web/application server is leaking version information via the &#34;Server&#34; HTTP response header. Access to such information may facilitate attackers identifying other vulnerabilities your web/application server is subject to.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that your web server, application server, load balancer, etc. is configured to suppress the &#34;Server&#34; header or provide generic details.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The server is leaking version information through the &#39;Server&#39; HTTP response header, which is confirmed by the presence of &#39;nginx/1.19.0&#39; in the response headers for multiple URLs, including the specified URL &#39;http://testphp.vulnweb.com/images/logo.gif&#39;. This information can help attackers identify vulnerabilities specific to this server version.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>X-Content-Type-Options Header Missing</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">http://testphp.vulnweb.com/images/logo.gif</div>
+        <div class="finding-meta">
+          <span>CWE: 693</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The website is missing the X-Content-Type-Options header, which can prevent browsers from interpreting files as a different MIME type than what is declared. This can help prevent certain types of attacks that rely on MIME type confusion.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The Anti-MIME-Sniffing header X-Content-Type-Options was not set to &#39;nosniff&#39;. This allows older versions of Internet Explorer and Chrome to perform MIME-sniffing on the response body, potentially causing the response body to be interpreted and displayed as a content type other than the declared content type.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that the application/web server sets the Content-Type header appropriately, and that it sets the X-Content-Type-Options header to &#39;nosniff&#39; for all web pages.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence indicates that the &#39;X-Content-Type-Options&#39; header is missing from the HTTP response for the URL http://testphp.vulnweb.com/images/logo.gif. This header is crucial for preventing MIME-sniffing by browsers, which can lead to security vulnerabilities if a browser interprets a file as a different MIME type than intended.</p>
+          </div>
+          
+          <div class="finding-section">
+            <label>Attack Vector</label>
+            <p style="font-family: monospace; font-size: 0.85rem;">The vulnerability arises when a browser performs MIME-sniffing on a response body that lacks the &#39;X-Content-Type-Options: nosniff&#39; header, potentially leading to the execution of unintended content types.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Server Leaks Information via &#34;X-Powered-By&#34; HTTP Response Header Field(s)</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">http://testphp.vulnweb.com/userinfo.php</div>
+        <div class="finding-meta">
+          <span>CWE: 497</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The server is revealing information about the technologies it uses through the &#34;X-Powered-By&#34; header. This can help attackers identify potential vulnerabilities in those technologies, increasing the risk of exploitation.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The web/application server is leaking information via one or more &#34;X-Powered-By&#34; HTTP response headers. Access to such information may facilitate attackers identifying other frameworks/components your web application is reliant upon and the vulnerabilities such components may be subject to.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that your web server, application server, load balancer, etc. is configured to suppress &#34;X-Powered-By&#34; headers.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The server is leaking information via the &#39;X-Powered-By&#39; HTTP response header, which reveals the PHP version and distribution details. This information can be used by attackers to identify potential vulnerabilities associated with that specific version of PHP.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Charset Mismatch (Header Versus Meta Content-Type Charset)</h3>
+          <span class="sev-badge sev-Severity.INFO">Severity.INFO</span>
+          
+            
+            <span class="pt-status pt-false_positive">PT: False Positive</span>
+          
+        </div>
+        <div class="finding-url">http://testphp.vulnweb.com</div>
+        <div class="finding-meta">
+          <span>CWE: 436</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>There is a mismatch between the character set declared in the HTTP header and the one in the HTML content. This can lead to browsers misinterpreting the content, which might be exploited by attackers to inject malicious scripts.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>This check identifies responses where the HTTP Content-Type header declares a charset different from the charset defined by the body of the HTML or XML. When there&#39;s a charset mismatch between the HTTP header and content body Web browsers can be forced into an undesirable content-sniffing mode to determine the content&#39;s correct character set.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Force UTF-8 for all text content in both the HTTP header and meta tags in HTML or encoding declarations in XML.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence provided does not contain any information related to a charset mismatch between the HTTP Content-Type header and the charset defined in the HTML or XML body. The evidence provided is related to other vulnerabilities such as missing CSP headers and clickjacking protection, but not charset mismatch.</p>
+          </div>
+          
+        
+      </div>
+      
+    
+  </section>
+
+  <!-- Recommendations -->
+  
+  <section>
+    <h2>Recommendations</h2>
+    <ul class="bullet-list">
+      
+      <li>Implement a robust Content Security Policy (CSP) to mitigate the risk of cross-site scripting and other code injection attacks.</li>
+      
+      <li>Add X-Frame-Options or Content-Security-Policy headers to protect against clickjacking attacks.</li>
+      
+      <li>Ensure that all forms include Anti-CSRF tokens to prevent cross-site request forgery attacks.</li>
+      
+      <li>Remove or obfuscate version information from HTTP response headers to prevent attackers from identifying server software versions.</li>
+      
+      <li>Include the X-Content-Type-Options header to prevent MIME-sniffing vulnerabilities.</li>
+      
+      <li>Regularly update server software and libraries to the latest versions to mitigate known vulnerabilities.</li>
+      
+    </ul>
+  </section>
+  
+
+  <footer>
+    Generated by Agentic VAPT · Powered by OpenAI Codex + OWASP ZAP · In progress
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VAPT Report — {{ session.target_url }}</title>
+  <style>
+    :root {
+      --critical: #dc2626; --high: #ea580c; --medium: #ca8a04;
+      --low: #16a34a; --info: #2563eb;
+      --bg: #0f172a; --surface: #1e293b; --surface2: #273344;
+      --text: #e2e8f0; --muted: #94a3b8; --border: #334155;
+      --confirmed: #16a34a; --fp: #6b7280; --inconclusive: #ca8a04;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+    /* Header */
+    .report-header { border-bottom: 2px solid var(--border); padding-bottom: 2rem; margin-bottom: 2.5rem; }
+    .report-header h1 { font-size: 2rem; font-weight: 700; color: #f1f5f9; }
+    .report-header .meta { color: var(--muted); font-size: 0.9rem; margin-top: 0.5rem; }
+    .report-header .meta span { margin-right: 1.5rem; }
+
+    /* Risk badge */
+    .risk-badge { display: inline-block; padding: 0.35rem 1rem; border-radius: 999px; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .risk-Critical { background: var(--critical); color: #fff; }
+    .risk-High { background: var(--high); color: #fff; }
+    .risk-Medium { background: var(--medium); color: #fff; }
+    .risk-Low { background: var(--low); color: #fff; }
+
+    /* Section */
+    section { margin-bottom: 3rem; }
+    section h2 { font-size: 1.3rem; font-weight: 600; margin-bottom: 1rem; color: #f1f5f9; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+
+    /* Executive summary */
+    .exec-summary { background: var(--surface); border-radius: 10px; padding: 1.5rem; border-left: 4px solid var(--medium); }
+    .exec-summary p { color: var(--text); }
+
+    /* Stats grid */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; }
+    .stat-card { background: var(--surface); border-radius: 10px; padding: 1.25rem; text-align: center; border: 1px solid var(--border); }
+    .stat-card .count { font-size: 2.2rem; font-weight: 700; }
+    .stat-card .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+    .count-Critical { color: var(--critical); }
+    .count-High { color: var(--high); }
+    .count-Medium { color: var(--medium); }
+    .count-Low { color: var(--low); }
+    .count-Informational { color: var(--info); }
+    .count-confirmed { color: var(--confirmed); }
+    .count-fp { color: var(--fp); }
+    .count-inconclusive { color: var(--inconclusive); }
+
+    /* Finding cards */
+    .finding-card { background: var(--surface); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.25rem; border: 1px solid var(--border); }
+    .finding-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; }
+    .finding-header h3 { font-size: 1rem; font-weight: 600; color: #f1f5f9; flex: 1; }
+    .sev-badge { display: inline-block; padding: 0.2rem 0.7rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; white-space: nowrap; }
+    .sev-Critical { background: rgba(220,38,38,0.2); color: var(--critical); border: 1px solid var(--critical); }
+    .sev-High { background: rgba(234,88,12,0.2); color: var(--high); border: 1px solid var(--high); }
+    .sev-Medium { background: rgba(202,138,4,0.2); color: var(--medium); border: 1px solid var(--medium); }
+    .sev-Low { background: rgba(22,163,74,0.2); color: var(--low); border: 1px solid var(--low); }
+    .sev-Informational { background: rgba(37,99,235,0.2); color: var(--info); border: 1px solid var(--info); }
+    .finding-url { font-size: 0.82rem; color: var(--muted); font-family: monospace; margin-bottom: 0.75rem; word-break: break-all; }
+    .finding-section { margin-top: 0.75rem; }
+    .finding-section label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .finding-section p { color: var(--text); font-size: 0.92rem; margin-top: 0.2rem; }
+    .finding-meta { display: flex; gap: 1.5rem; margin-top: 0.75rem; font-size: 0.82rem; color: var(--muted); }
+    .pt-status { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.7rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
+    .pt-confirmed { background: rgba(22,163,74,0.2); color: var(--confirmed); border: 1px solid var(--confirmed); }
+    .pt-false_positive { background: rgba(107,114,128,0.2); color: var(--fp); border: 1px solid var(--fp); }
+    .pt-inconclusive { background: rgba(202,138,4,0.2); color: var(--inconclusive); border: 1px solid var(--inconclusive); }
+
+    /* Key findings / recommendations list */
+    .bullet-list { list-style: none; padding: 0; }
+    .bullet-list li { padding: 0.6rem 0.75rem; background: var(--surface2); border-radius: 6px; margin-bottom: 0.5rem; font-size: 0.92rem; display: flex; align-items: flex-start; gap: 0.5rem; }
+    .bullet-list li::before { content: "→"; color: var(--medium); font-weight: 700; flex-shrink: 0; }
+
+    /* Footer */
+    footer { border-top: 1px solid var(--border); padding-top: 1.5rem; margin-top: 2rem; font-size: 0.82rem; color: var(--muted); text-align: center; }
+
+    @media print { body { background: #fff; color: #111; } .container { padding: 0; } }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="report-header">
+    <h1>Vulnerability Assessment &amp; Penetration Testing Report</h1>
+    <div class="meta">
+      <span><strong>Target:</strong> {{ session.target_url }}</span>
+      <span><strong>Session:</strong> {{ session.session_id[:8] }}</span>
+      {% if session.start_time %}<span><strong>Started:</strong> {{ session.start_time[:19] | replace("T", " ") }} UTC</span>{% endif %}
+      {% if session.end_time %}<span><strong>Completed:</strong> {{ session.end_time[:19] | replace("T", " ") }} UTC</span>{% endif %}
+      {% if narrative %}
+      <div style="margin-top:0.75rem;">
+        Overall Risk: <span class="risk-badge risk-{{ narrative.risk_rating }}">{{ narrative.risk_rating }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Executive Summary -->
+  {% if narrative %}
+  <section>
+    <h2>Executive Summary</h2>
+    <div class="exec-summary"><p>{{ narrative.executive_summary }}</p></div>
+  </section>
+  {% endif %}
+
+  <!-- Severity Dashboard -->
+  <section>
+    <h2>Scan Overview</h2>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="count count-Critical">{{ severity_counts.Critical }}</div><div class="label">Critical</div></div>
+      <div class="stat-card"><div class="count count-High">{{ severity_counts.High }}</div><div class="label">High</div></div>
+      <div class="stat-card"><div class="count count-Medium">{{ severity_counts.Medium }}</div><div class="label">Medium</div></div>
+      <div class="stat-card"><div class="count count-Low">{{ severity_counts.Low }}</div><div class="label">Low</div></div>
+      <div class="stat-card"><div class="count count-Informational">{{ severity_counts.Informational }}</div><div class="label">Info</div></div>
+      {% if session.pt_results %}
+      <div class="stat-card"><div class="count count-confirmed">{{ confirmed }}</div><div class="label">PT Confirmed</div></div>
+      <div class="stat-card"><div class="count count-fp">{{ false_pos }}</div><div class="label">False Positive</div></div>
+      <div class="stat-card"><div class="count count-inconclusive">{{ inconclusive }}</div><div class="label">Inconclusive</div></div>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- Key Findings -->
+  {% if narrative and narrative.key_findings %}
+  <section>
+    <h2>Key Findings</h2>
+    <ul class="bullet-list">
+      {% for kf in narrative.key_findings %}
+      <li>{{ kf }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <!-- Detailed Findings -->
+  <section>
+    <h2>Detailed Findings</h2>
+    {% if findings %}
+      {% for f in findings %}
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>{{ f.name }}</h3>
+          <span class="sev-badge sev-{{ f.severity }}">{{ f.severity }}</span>
+          {% if f.id in pt_map %}
+            {% set pt = pt_map[f.id] %}
+            <span class="pt-status pt-{{ pt.status }}">PT: {{ pt.status | replace("_", " ") | title }}</span>
+          {% endif %}
+        </div>
+        <div class="finding-url">{{ f.url }}</div>
+        <div class="finding-meta">
+          {% if f.cwe %}<span>CWE: {{ f.cwe }}</span>{% endif %}
+          {% if f.cvss %}<span>CVSS: {{ f.cvss }}</span>{% endif %}
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>{{ f.ai_explanation }}</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>{{ f.description }}</p>
+        </div>
+        {% if f.solution %}
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>{{ f.solution }}</p>
+        </div>
+        {% endif %}
+        {% if f.id in pt_map %}
+          {% set pt = pt_map[f.id] %}
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>{{ pt.explanation }}</p>
+          </div>
+          {% if pt.attack_vector %}
+          <div class="finding-section">
+            <label>Attack Vector</label>
+            <p style="font-family: monospace; font-size: 0.85rem;">{{ pt.attack_vector }}</p>
+          </div>
+          {% endif %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <p style="color: var(--muted);">No findings were recorded.</p>
+    {% endif %}
+  </section>
+
+  <!-- Recommendations -->
+  {% if narrative and narrative.recommendations %}
+  <section>
+    <h2>Recommendations</h2>
+    <ul class="bullet-list">
+      {% for rec in narrative.recommendations %}
+      <li>{{ rec }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <footer>
+    Generated by Agentic VAPT · Powered by OpenAI Codex + OWASP ZAP · {{ session.end_time[:10] if session.end_time else "In progress" }}
+  </footer>
+
+</div>
+</body>
+</html>

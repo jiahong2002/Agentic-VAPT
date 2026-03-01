@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VAPT Report — https://www.hackthebox.com</title>
+  <style>
+    :root {
+      --critical: #dc2626; --high: #ea580c; --medium: #ca8a04;
+      --low: #16a34a; --info: #2563eb;
+      --bg: #0f172a; --surface: #1e293b; --surface2: #273344;
+      --text: #e2e8f0; --muted: #94a3b8; --border: #334155;
+      --confirmed: #16a34a; --fp: #6b7280; --inconclusive: #ca8a04;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+    /* Header */
+    .report-header { border-bottom: 2px solid var(--border); padding-bottom: 2rem; margin-bottom: 2.5rem; }
+    .report-header h1 { font-size: 2rem; font-weight: 700; color: #f1f5f9; }
+    .report-header .meta { color: var(--muted); font-size: 0.9rem; margin-top: 0.5rem; }
+    .report-header .meta span { margin-right: 1.5rem; }
+
+    /* Risk badge */
+    .risk-badge { display: inline-block; padding: 0.35rem 1rem; border-radius: 999px; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .risk-Critical { background: var(--critical); color: #fff; }
+    .risk-High { background: var(--high); color: #fff; }
+    .risk-Medium { background: var(--medium); color: #fff; }
+    .risk-Low { background: var(--low); color: #fff; }
+
+    /* Section */
+    section { margin-bottom: 3rem; }
+    section h2 { font-size: 1.3rem; font-weight: 600; margin-bottom: 1rem; color: #f1f5f9; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+
+    /* Executive summary */
+    .exec-summary { background: var(--surface); border-radius: 10px; padding: 1.5rem; border-left: 4px solid var(--medium); }
+    .exec-summary p { color: var(--text); }
+
+    /* Stats grid */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; }
+    .stat-card { background: var(--surface); border-radius: 10px; padding: 1.25rem; text-align: center; border: 1px solid var(--border); }
+    .stat-card .count { font-size: 2.2rem; font-weight: 700; }
+    .stat-card .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+    .count-Critical { color: var(--critical); }
+    .count-High { color: var(--high); }
+    .count-Medium { color: var(--medium); }
+    .count-Low { color: var(--low); }
+    .count-Informational { color: var(--info); }
+    .count-confirmed { color: var(--confirmed); }
+    .count-fp { color: var(--fp); }
+    .count-inconclusive { color: var(--inconclusive); }
+
+    /* Finding cards */
+    .finding-card { background: var(--surface); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.25rem; border: 1px solid var(--border); }
+    .finding-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; }
+    .finding-header h3 { font-size: 1rem; font-weight: 600; color: #f1f5f9; flex: 1; }
+    .sev-badge { display: inline-block; padding: 0.2rem 0.7rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; white-space: nowrap; }
+    .sev-Critical { background: rgba(220,38,38,0.2); color: var(--critical); border: 1px solid var(--critical); }
+    .sev-High { background: rgba(234,88,12,0.2); color: var(--high); border: 1px solid var(--high); }
+    .sev-Medium { background: rgba(202,138,4,0.2); color: var(--medium); border: 1px solid var(--medium); }
+    .sev-Low { background: rgba(22,163,74,0.2); color: var(--low); border: 1px solid var(--low); }
+    .sev-Informational { background: rgba(37,99,235,0.2); color: var(--info); border: 1px solid var(--info); }
+    .finding-url { font-size: 0.82rem; color: var(--muted); font-family: monospace; margin-bottom: 0.75rem; word-break: break-all; }
+    .finding-section { margin-top: 0.75rem; }
+    .finding-section label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .finding-section p { color: var(--text); font-size: 0.92rem; margin-top: 0.2rem; }
+    .finding-meta { display: flex; gap: 1.5rem; margin-top: 0.75rem; font-size: 0.82rem; color: var(--muted); }
+    .pt-status { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.7rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
+    .pt-confirmed { background: rgba(22,163,74,0.2); color: var(--confirmed); border: 1px solid var(--confirmed); }
+    .pt-false_positive { background: rgba(107,114,128,0.2); color: var(--fp); border: 1px solid var(--fp); }
+    .pt-inconclusive { background: rgba(202,138,4,0.2); color: var(--inconclusive); border: 1px solid var(--inconclusive); }
+
+    /* Key findings / recommendations list */
+    .bullet-list { list-style: none; padding: 0; }
+    .bullet-list li { padding: 0.6rem 0.75rem; background: var(--surface2); border-radius: 6px; margin-bottom: 0.5rem; font-size: 0.92rem; display: flex; align-items: flex-start; gap: 0.5rem; }
+    .bullet-list li::before { content: "→"; color: var(--medium); font-weight: 700; flex-shrink: 0; }
+
+    /* Footer */
+    footer { border-top: 1px solid var(--border); padding-top: 1.5rem; margin-top: 2rem; font-size: 0.82rem; color: var(--muted); text-align: center; }
+
+    @media print { body { background: #fff; color: #111; } .container { padding: 0; } }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="report-header">
+    <h1>Vulnerability Assessment &amp; Penetration Testing Report</h1>
+    <div class="meta">
+      <span><strong>Target:</strong> https://www.hackthebox.com</span>
+      <span><strong>Session:</strong> 310d0ff7</span>
+      <span><strong>Started:</strong> 2026-03-01 14:15:15 UTC</span>
+      
+      
+      <div style="margin-top:0.75rem;">
+        Overall Risk: <span class="risk-badge risk-Medium">Medium</span>
+      </div>
+      
+    </div>
+  </div>
+
+  <!-- Executive Summary -->
+  
+  <section>
+    <h2>Executive Summary</h2>
+    <div class="exec-summary"><p>The Vulnerability Assessment and Penetration Testing (VAPT) conducted on the Hack The Box platform identified several security vulnerabilities that could potentially impact the confidentiality, integrity, and availability of the system. The assessment revealed a mix of medium and low-severity vulnerabilities, with no critical or high-severity issues detected. The most significant findings include the absence of critical security headers such as Content Security Policy (CSP) and Strict-Transport-Security (HSTS), the use of a vulnerable JavaScript library, and several cookie security misconfigurations. These vulnerabilities, if exploited, could lead to unauthorized access, data leakage, or other security breaches. Immediate attention is required to address these issues to enhance the platform&#39;s security posture.</p></div>
+  </section>
+  
+
+  <!-- Severity Dashboard -->
+  <section>
+    <h2>Scan Overview</h2>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="count count-Critical">0</div><div class="label">Critical</div></div>
+      <div class="stat-card"><div class="count count-High">0</div><div class="label">High</div></div>
+      <div class="stat-card"><div class="count count-Medium">4</div><div class="label">Medium</div></div>
+      <div class="stat-card"><div class="count count-Low">5</div><div class="label">Low</div></div>
+      <div class="stat-card"><div class="count count-Informational">3</div><div class="label">Info</div></div>
+      
+      <div class="stat-card"><div class="count count-confirmed">9</div><div class="label">PT Confirmed</div></div>
+      <div class="stat-card"><div class="count count-fp">2</div><div class="label">False Positive</div></div>
+      <div class="stat-card"><div class="count count-inconclusive">1</div><div class="label">Inconclusive</div></div>
+      
+    </div>
+  </section>
+
+  <!-- Key Findings -->
+  
+  <section>
+    <h2>Key Findings</h2>
+    <ul class="bullet-list">
+      
+      <li>Content Security Policy (CSP) Header Not Set</li>
+      
+      <li>Vulnerable JS Library</li>
+      
+      <li>Missing Anti-clickjacking Header</li>
+      
+      <li>Strict-Transport-Security Header Not Set</li>
+      
+      <li>Cookie No HttpOnly Flag</li>
+      
+      <li>Cookie Without Secure Flag</li>
+      
+      <li>Cookie with SameSite Attribute None</li>
+      
+    </ul>
+  </section>
+  
+
+  <!-- Detailed Findings -->
+  <section>
+    <h2>Detailed Findings</h2>
+    
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Content Security Policy (CSP) Header Not Set</h3>
+          <span class="sev-badge sev-Severity.MEDIUM">Severity.MEDIUM</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/api/</div>
+        <div class="finding-meta">
+          <span>CWE: 693</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The website does not have a Content Security Policy (CSP) in place. CSP is important for protecting against certain types of cyber attacks, such as data theft and site defacement. Implementing CSP can help ensure that only approved content is loaded on the site.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>Content Security Policy (CSP) is an added layer of security that helps to detect and mitigate certain types of attacks, including Cross Site Scripting (XSS) and data injection attacks. These attacks are used for everything from data theft to site defacement or distribution of malware. CSP provides a set of standard HTTP headers that allow website owners to declare approved sources of content that browsers should be allowed to load on that page — covered types are JavaScript, CSS, HTML frames, fonts, images and embeddable objects such as Java applets, ActiveX, audio and video files.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that your web server, application server, load balancer, etc. is configured to set the Content-Security-Policy header.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence clearly shows multiple instances where the CSP header is not set across various endpoints of the website. The alerts have high confidence and are consistent across different URLs, confirming the absence of the CSP header. This consistent pattern across multiple endpoints indicates a systemic issue rather than an isolated incident, confirming the vulnerability.</p>
+          </div>
+          
+          <div class="finding-section">
+            <label>Attack Vector</label>
+            <p style="font-family: monospace; font-size: 0.85rem;">Absence of CSP header allows for potential XSS and data injection attacks.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Vulnerable JS Library</h3>
+          <span class="sev-badge sev-Severity.MEDIUM">Severity.MEDIUM</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/hs/hsstatic/jquery-libs/static-1.1/jquery/jquery-1.7.1.js</div>
+        <div class="finding-meta">
+          <span>CWE: 1395</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The website is using an outdated version of a JavaScript library that has known security vulnerabilities. This could be exploited by attackers to compromise the website&#39;s security.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The identified library appears to be vulnerable.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Upgrade to the latest version of the affected library.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The evidence provided by the active scan clearly indicates that the jQuery library version 1.7.1 is being used on the site. This version is known to have several vulnerabilities as listed in the CVEs provided. The presence of these vulnerabilities in the identified library confirms the vulnerability as real.</p>
+          </div>
+          
+          <div class="finding-section">
+            <label>Attack Vector</label>
+            <p style="font-family: monospace; font-size: 0.85rem;">Use of jQuery version 1.7.1 with known vulnerabilities.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Missing Anti-clickjacking Header</h3>
+          <span class="sev-badge sev-Severity.MEDIUM">Severity.MEDIUM</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/blog</div>
+        <div class="finding-meta">
+          <span>CWE: 1021</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The website lacks protection against clickjacking attacks, where an attacker tricks users into clicking on something different from what the user perceives, potentially leading to unauthorized actions.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The response does not protect against &#39;ClickJacking&#39; attacks. It should include either Content-Security-Policy with &#39;frame-ancestors&#39; directive or X-Frame-Options.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Modern Web browsers support the Content-Security-Policy and X-Frame-Options HTTP headers. Ensure one of them is set on all web pages returned by your site/app.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence clearly indicates that the &#39;Missing Anti-clickjacking Header&#39; vulnerability is present on the specified URL. The absence of the Content-Security-Policy with &#39;frame-ancestors&#39; directive or X-Frame-Options header is a direct confirmation of the vulnerability, as these headers are essential for protecting against ClickJacking attacks.</p>
+          </div>
+          
+          <div class="finding-section">
+            <label>Attack Vector</label>
+            <p style="font-family: monospace; font-size: 0.85rem;">Lack of X-Frame-Options or CSP &#39;frame-ancestors&#39; directive allows for potential ClickJacking attacks.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>CSP: Failure to Define Directive with No Fallback</h3>
+          <span class="sev-badge sev-Severity.MEDIUM">Severity.MEDIUM</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/cdn-cgi/content?id=yXFror6AHFbFKFp5Eb8gOYU1IjJTBgEr1T53xSxsCAk-1772374553-1.1.1.1-9guGIfLFsLrBTLPAA252zzBy_WX1TMdxTy9HGS4BIg0</div>
+        <div class="finding-meta">
+          <span>CWE: 693</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The website&#39;s Content Security Policy is incomplete, which could allow unauthorized content to be loaded. This increases the risk of attacks such as cross-site scripting.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The Content Security Policy fails to define one of the directives that has no fallback. Missing/excluding them is the same as allowing anything.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that your web server, application server, load balancer, etc. is properly configured to set the Content-Security-Policy header.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence indicates a consistent failure to define critical CSP directives across multiple URLs. The directives &#39;frame-ancestors&#39; and &#39;form-action&#39; are not defined, and they do not fallback to &#39;default-src&#39;, effectively allowing anything. This is corroborated by the high confidence level in the alerts and the presence of the issue across various endpoints, confirming the vulnerability.</p>
+          </div>
+          
+          <div class="finding-section">
+            <label>Attack Vector</label>
+            <p style="font-family: monospace; font-size: 0.85rem;">Missing &#39;frame-ancestors&#39; and &#39;form-action&#39; directives in CSP, allowing potential clickjacking and form submission vulnerabilities.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Application Error Disclosure</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/api/</div>
+        <div class="finding-meta">
+          <span>CWE: 550</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The website has error messages that might reveal sensitive information about the server&#39;s internal workings. This could potentially be exploited by attackers to find weaknesses in the system.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>This page contains an error/warning message that may disclose sensitive information like the location of the file that produced the unhandled exception. This information can be used to launch further attacks against the web application. The alert could be a false positive if the error message is found inside a documentation page.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Review the source code of this page. Implement custom error pages. Consider implementing a mechanism to provide a unique error reference/identifier to the client (browser) while logging the details on the server side and not exposing them to the user.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence shows multiple instances of HTTP 500 Internal Server Error responses from different endpoints, including the specified URL https://www.hackthebox.com/api/. This indicates that the application is disclosing error messages that could potentially reveal sensitive information about the server configuration or the application itself. The presence of these error messages outside of a documentation context confirms the vulnerability.</p>
+          </div>
+          
+          <div class="finding-section">
+            <label>Attack Vector</label>
+            <p style="font-family: monospace; font-size: 0.85rem;">Accessing the URL directly to trigger the error response.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Cookie No HttpOnly Flag</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/api/</div>
+        <div class="finding-meta">
+          <span>CWE: 1004</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>Some cookies on the website can be accessed by JavaScript, which could allow attackers to steal session information if they manage to run malicious scripts on the site. This could lead to unauthorized access to user accounts.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>A cookie has been set without the HttpOnly flag, which means that the cookie can be accessed by JavaScript. If a malicious script can be run on this page then the cookie will be accessible and can be transmitted to another site. If this is a session cookie then session hijacking may be possible.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that the HttpOnly flag is set for all cookies.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence clearly indicates that the XSRF-TOKEN cookie is set without the HttpOnly flag on multiple endpoints, including the specified URL https://www.hackthebox.com/api/. This confirms the vulnerability as it allows the cookie to be accessed via JavaScript, potentially leading to session hijacking if exploited by a malicious script.</p>
+          </div>
+          
+          <div class="finding-section">
+            <label>Attack Vector</label>
+            <p style="font-family: monospace; font-size: 0.85rem;">Accessing the XSRF-TOKEN cookie via JavaScript if a Cross-Site Scripting (XSS) vulnerability is present.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Cookie Without Secure Flag</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/api/</div>
+        <div class="finding-meta">
+          <span>CWE: 614</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>Cookies without the secure flag can be transmitted over unencrypted connections, making them vulnerable to interception by attackers. This could lead to unauthorized access to sensitive information.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>A cookie has been set without the secure flag, which means that the cookie can be accessed via unencrypted connections.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Whenever a cookie contains sensitive information or is a session token, then it should always be passed using an encrypted channel. Ensure that the secure flag is set for cookies containing such sensitive information.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence clearly shows that the &#39;website_session&#39; cookie is being set without the secure flag across multiple endpoints, including the specified URL https://www.hackthebox.com/api/. This confirms the vulnerability as the secure flag is necessary to ensure cookies are only sent over HTTPS, preventing them from being accessed via unencrypted connections.</p>
+          </div>
+          
+          <div class="finding-section">
+            <label>Attack Vector</label>
+            <p style="font-family: monospace; font-size: 0.85rem;">Set-Cookie: website_session</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Cookie with SameSite Attribute None</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/sitemap.xml</div>
+        <div class="finding-meta">
+          <span>CWE: 1275</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>Cookies with the SameSite attribute set to &#39;none&#39; can be sent with cross-site requests, which might expose them to certain types of attacks. Adjusting this setting can help protect against these vulnerabilities.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>A cookie has been set with its SameSite attribute set to &#34;none&#34;, which means that the cookie can be sent as a result of a &#39;cross-site&#39; request. The SameSite attribute is an effective counter measure to cross-site request forgery, cross-site script inclusion, and timing attacks.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that the SameSite attribute is set to either &#39;lax&#39; or ideally &#39;strict&#39; for all cookies.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence clearly shows that the cookie &#39;__cf_bm&#39; has been set with the SameSite attribute set to &#39;none&#39;. This confirms the vulnerability as it allows the cookie to be sent in cross-site requests, which can be exploited in certain attack scenarios like CSRF.</p>
+          </div>
+          
+          <div class="finding-section">
+            <label>Attack Vector</label>
+            <p style="font-family: monospace; font-size: 0.85rem;">Set-Cookie: __cf_bm with SameSite=None</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Strict-Transport-Security Header Not Set</h3>
+          <span class="sev-badge sev-Severity.LOW">Severity.LOW</span>
+          
+            
+            <span class="pt-status pt-confirmed">PT: Confirmed</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/cdn-cgi/content?id=yXFror6AHFbFKFp5Eb8gOYU1IjJTBgEr1T53xSxsCAk-1772374553-1.1.1.1-9guGIfLFsLrBTLPAA252zzBy_WX1TMdxTy9HGS4BIg0</div>
+        <div class="finding-meta">
+          <span>CWE: 319</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The website does not enforce secure connections through HSTS, which means users might access the site over an insecure connection, potentially exposing sensitive data to attackers.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>HTTP Strict Transport Security (HSTS) is a web security policy mechanism whereby a web server declares that complying user agents (such as a web browser) are to interact with it using only secure HTTPS connections (i.e. HTTP layered over TLS/SSL). HSTS is an IETF standards track protocol and is specified in RFC 6797.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Ensure that your web server, application server, load balancer, etc. is configured to enforce Strict-Transport-Security.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence shows multiple alerts for the &#39;Strict-Transport-Security Header Not Set&#39; vulnerability across different URLs on the domain &#39;hackthebox.com&#39;. Each alert has a high confidence level, suggesting that the HSTS header is indeed not set for these resources. This consistent pattern across various endpoints confirms the vulnerability.</p>
+          </div>
+          
+          <div class="finding-section">
+            <label>Attack Vector</label>
+            <p style="font-family: monospace; font-size: 0.85rem;">Lack of HSTS header allows potential downgrade attacks and man-in-the-middle attacks by not enforcing HTTPS connections.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Session Management Response Identified</h3>
+          <span class="sev-badge sev-Severity.INFO">Severity.INFO</span>
+          
+            
+            <span class="pt-status pt-false_positive">PT: False Positive</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/rest/</div>
+        <div class="finding-meta">
+          
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>This alert indicates that the website&#39;s response includes session management tokens, which are used to manage user sessions. It&#39;s an informational alert, meaning it&#39;s not a vulnerability but rather a notification of how sessions are being managed.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The given response has been identified as containing a session management token. The &#39;Other Info&#39; field contains a set of header tokens that can be used in the Header Based Session Management Method. If the request is in a context which has a Session Management Method set to &#34;Auto-Detect&#34; then this rule will change the session management to use the tokens identified.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>This is an informational alert rather than a vulnerability and so there is nothing to fix.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The alert &#39;Session Management Response Identified&#39; is informational and not indicative of a vulnerability. It merely identifies session management tokens in the response headers, which is a normal behavior for web applications. The alert itself states that there is nothing to fix and is not considered a security risk. Therefore, this finding is a false positive as it does not represent an actual vulnerability.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Loosely Scoped Cookie</h3>
+          <span class="sev-badge sev-Severity.INFO">Severity.INFO</span>
+          
+            
+            <span class="pt-status pt-inconclusive">PT: Inconclusive</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/sitemap.xml</div>
+        <div class="finding-meta">
+          <span>CWE: 565</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>Some cookies are set to be accessible by multiple subdomains, which might not be a direct vulnerability but could increase the risk of unauthorized access if not managed properly.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>Cookies can be scoped by domain or path. This check is only concerned with domain scope.The domain scope applied to a cookie determines which domains can access it. For example, a cookie can be scoped strictly to a subdomain e.g. www.nottrusted.com, or loosely scoped to a parent domain e.g. nottrusted.com. In the latter case, any subdomain of nottrusted.com can access the cookie. Loosely scoped cookies are common in mega-applications like google.com and live.com. Cookies set from a subdomain like app.foo.bar are transmitted only to that domain by the browser. However, cookies scoped to a parent-level domain may be transmitted to the parent, or any subdomain of the parent.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>Always scope cookies to a FQDN (Fully Qualified Domain Name).</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence indicates the presence of loosely scoped cookies across multiple endpoints, but it does not provide specific evidence that these cookies are accessible by unintended subdomains or that they pose a security risk. The evidence lacks details on the actual domain scope of the cookies and whether they are indeed accessible by other subdomains. Without this information, it is not possible to confirm or deny the vulnerability conclusively.</p>
+          </div>
+          
+        
+      </div>
+      
+      <div class="finding-card">
+        <div class="finding-header">
+          <h3>Re-examine Cache-control Directives</h3>
+          <span class="sev-badge sev-Severity.INFO">Severity.INFO</span>
+          
+            
+            <span class="pt-status pt-false_positive">PT: False Positive</span>
+          
+        </div>
+        <div class="finding-url">https://www.hackthebox.com/cdn-cgi/content?id=yXFror6AHFbFKFp5Eb8gOYU1IjJTBgEr1T53xSxsCAk-1772374553-1.1.1.1-9guGIfLFsLrBTLPAA252zzBy_WX1TMdxTy9HGS4BIg0</div>
+        <div class="finding-meta">
+          <span>CWE: 525</span>
+          
+        </div>
+        <div class="finding-section">
+          <label>Plain-English Explanation</label>
+          <p>The website&#39;s cache settings might allow sensitive information to be stored in the browser or proxy caches, which could be accessed by unauthorized users. It&#39;s important to review these settings to ensure sensitive data is not cached.</p>
+        </div>
+        <div class="finding-section">
+          <label>Technical Description</label>
+          <p>The cache-control header has not been set properly or is missing, allowing the browser and proxies to cache content. For static assets like css, js, or image files this might be intended, however, the resources should be reviewed to ensure that no sensitive content will be cached.</p>
+        </div>
+        
+        <div class="finding-section">
+          <label>Remediation</label>
+          <p>For secure content, ensure the cache-control HTTP header is set with &#34;no-cache, no-store, must-revalidate&#34;. If an asset should be cached consider setting the directives &#34;public, max-age, immutable&#34;.</p>
+        </div>
+        
+        
+          
+          <div class="finding-section">
+            <label>PT Verification</label>
+            <p>The active scan evidence indicates that the cache-control header is present on the URL in question, but it does not specify any sensitive content being cached. The evidence provided for the URL &#39;https://www.hackthebox.com/cdn-cgi/content?id=yXFror6AHFbFKFp5Eb8gOYU1IjJTBgEr1T53xSxsCAk-1772374553-1.1.1.1-9guGIfLFsLrBTLPAA252zzBy_WX1TMdxTy9HGS4BIg0&#39; shows no evidence of improper cache-control settings. The alert is informational and does not confirm the presence of sensitive content being cached. Therefore, this is a false positive.</p>
+          </div>
+          
+        
+      </div>
+      
+    
+  </section>
+
+  <!-- Recommendations -->
+  
+  <section>
+    <h2>Recommendations</h2>
+    <ul class="bullet-list">
+      
+      <li>Implement a robust Content Security Policy (CSP) across all endpoints to mitigate the risk of cross-site scripting and other code injection attacks.</li>
+      
+      <li>Upgrade the jQuery library to the latest stable version to eliminate known vulnerabilities associated with version 1.7.1.</li>
+      
+      <li>Set the HttpOnly and Secure flags on all cookies to prevent them from being accessed via JavaScript and to ensure they are only transmitted over secure connections.</li>
+      
+      <li>Define and enforce the Strict-Transport-Security (HSTS) header to ensure all communications are conducted over HTTPS, thereby protecting against man-in-the-middle attacks.</li>
+      
+      <li>Add the X-Frame-Options or Content-Security-Policy with &#39;frame-ancestors&#39; directive to protect against clickjacking attacks.</li>
+      
+      <li>Regularly review and update security headers and configurations to align with best practices and emerging threats.</li>
+      
+    </ul>
+  </section>
+  
+
+  <footer>
+    Generated by Agentic VAPT · Powered by OpenAI Codex + OWASP ZAP · In progress
+  </footer>
+
+</div>
+</body>
+</html>
