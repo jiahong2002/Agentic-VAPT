@@ -1,0 +1,16 @@
+{
+  "name": "agentic-vapt",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w packages/backend\" \"npm run dev -w packages/frontend\"",
+    "build": "npm run build -w packages/mcp-server && npm run build -w packages/backend && npm run build -w packages/frontend",
+    "start": "npm run start -w packages/backend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "typescript": "^5.3.0"
+  }
+}
