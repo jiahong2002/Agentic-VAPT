@@ -156,32 +156,66 @@ function NetworkCanvas({ triggered }: { triggered: boolean }) {
 }
 
 
+type ScanMode = 'DAST' | 'SAST' | 'BOTH';
+
+const MODE_LABELS: Record<ScanMode, string> = {
+  DAST: 'DAST',
+  SAST: 'SAST',
+  BOTH: 'Both',
+};
+const MODE_DESCRIPTIONS: Record<ScanMode, string> = {
+  DAST: 'Dynamic — exploit a live target',
+  SAST: 'Static — audit your source code',
+  BOTH: 'Dynamic + static in parallel',
+};
+
 // ─── Home Page ───────────────────────────────────────────────────────────────
 export default function HomePage() {
   const router = useRouter();
+  const [mode, setMode] = useState<ScanMode>('DAST');
   const [url, setUrl] = useState('');
+  const [githubPat, setGithubPat] = useState('');
+  const [githubRepo, setGithubRepo] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [triggered, setTriggered] = useState(false);
 
+  const needsUrl = mode === 'DAST' || mode === 'BOTH';
+  const needsGithub = mode === 'SAST' || mode === 'BOTH';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!agreed) { setError('You must confirm authorization to proceed.'); return; }
-    if (!url.trim()) { setError('Please enter a target URL.'); return; }
+    if (needsUrl && !url.trim()) { setError('Please enter a target URL.'); return; }
+    if (needsGithub && !githubPat.trim()) { setError('Please enter your GitHub PAT.'); return; }
+    if (needsGithub && !githubRepo.trim().includes('/')) {
+      setError("GitHub repo must be in 'owner/repo' format.");
+      return;
+    }
     setError('');
     setTriggered(true);
     setLoading(true);
 
     try {
+      const body: Record<string, string> = { mode };
+      if (needsUrl) body.url = url.trim();
+      if (needsGithub) {
+        body.github_pat = githubPat.trim();
+        body.github_repo = githubRepo.trim();
+      }
+
       const res = await fetch('http://localhost:8000/api/scan/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error('Failed to start scan');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || 'Failed to start scan');
+      }
       const { scan_id } = await res.json();
-      await new Promise(r => setTimeout(r, 800)); // Let the animation play
+      await new Promise(r => setTimeout(r, 800));
       router.push(`/scan/${scan_id}`);
     } catch (err: any) {
       setError(err.message || 'Failed to connect to backend');
@@ -212,33 +246,87 @@ export default function HomePage() {
           </p>
 
           <form className={styles.form} onSubmit={handleSubmit}>
-            <div className={styles.inputRow}>
-              <div className={styles.inputWrapper}>
-                <span className={styles.inputIcon}>⌖</span>
-                <input
-                  id="target-url"
-                  type="url"
-                  className={styles.input}
-                  placeholder="https://target.example.com"
-                  value={url}
-                  onChange={e => setUrl(e.target.value)}
+            {/* Mode selector */}
+            <div className={styles.modeSelector}>
+              {(['DAST', 'SAST', 'BOTH'] as ScanMode[]).map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`${styles.modeTab} ${mode === m ? styles.modeTabActive : ''}`}
+                  onClick={() => { setMode(m); setError(''); }}
                   disabled={loading}
-                  required
-                />
-              </div>
-              <button
-                id="start-scan-btn"
-                type="submit"
-                className={styles.cta}
-                disabled={loading || !agreed}
-              >
-                {loading ? (
-                  <span className={styles.spinner} />
-                ) : (
-                  <>Scan Target <span className={styles.arrow}>→</span></>
-                )}
-              </button>
+                >
+                  <span className={styles.modeTabLabel}>{MODE_LABELS[m]}</span>
+                  <span className={styles.modeTabDesc}>{MODE_DESCRIPTIONS[m]}</span>
+                </button>
+              ))}
             </div>
+
+            {/* Target URL — shown for DAST / Both */}
+            {needsUrl && (
+              <div className={styles.inputRow}>
+                <div className={styles.inputWrapper}>
+                  <span className={styles.inputIcon}>⌖</span>
+                  <input
+                    id="target-url"
+                    type="url"
+                    className={styles.input}
+                    placeholder="https://target.example.com"
+                    value={url}
+                    onChange={e => setUrl(e.target.value)}
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* GitHub fields — shown for SAST / Both */}
+            {needsGithub && (
+              <div className={styles.githubSection}>
+                <div className={styles.githubRow}>
+                  <div className={styles.inputWrapper}>
+                    <span className={styles.inputIcon} style={{ fontSize: 14 }}>&#x1F511;</span>
+                    <input
+                      id="github-pat"
+                      type="password"
+                      className={styles.input}
+                      placeholder="GitHub Personal Access Token (repo scope)"
+                      value={githubPat}
+                      onChange={e => setGithubPat(e.target.value)}
+                      disabled={loading}
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+                <div className={styles.githubRow}>
+                  <div className={styles.inputWrapper}>
+                    <span className={styles.inputIcon} style={{ fontSize: 14 }}>&#x1F4C1;</span>
+                    <input
+                      id="github-repo"
+                      type="text"
+                      className={styles.input}
+                      placeholder="owner/repository"
+                      value={githubRepo}
+                      onChange={e => setGithubRepo(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              id="start-scan-btn"
+              type="submit"
+              className={styles.cta}
+              disabled={loading || !agreed}
+            >
+              {loading ? (
+                <span className={styles.spinner} />
+              ) : (
+                <>Start Scan <span className={styles.arrow}>→</span></>
+              )}
+            </button>
 
             <label className={styles.authLabel}>
               <input

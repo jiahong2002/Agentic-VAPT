@@ -3,8 +3,17 @@ from typing import Optional
 from enum import Enum
 
 
+class ScanMode(str, Enum):
+    DAST = "DAST"
+    SAST = "SAST"
+    BOTH = "BOTH"
+
+
 class ScanRequest(BaseModel):
-    url: str
+    url: Optional[str] = None
+    mode: ScanMode = ScanMode.DAST
+    github_pat: Optional[str] = None
+    github_repo: Optional[str] = None  # "owner/repo" format
 
 
 class ScanStatus(str, Enum):
@@ -12,6 +21,13 @@ class ScanStatus(str, Enum):
     SCANNING = "SCANNING"
     AWAITING_APPROVAL = "AWAITING_APPROVAL"
     EXPLOITING = "EXPLOITING"
+    DONE = "DONE"
+    ERROR = "ERROR"
+
+
+class SASTStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
     DONE = "DONE"
     ERROR = "ERROR"
 
@@ -78,11 +94,28 @@ class AgentResult(BaseModel):
     false_positive_reason: Optional[str] = None
 
 
+class SASTFinding(BaseModel):
+    id: str
+    title: str
+    file_path: str
+    line_number: Optional[int] = None
+    technique: str
+    severity: Severity
+    description: str
+    code_snippet: str
+    patch: str
+    explanation: str
+
+
 class ScanState(BaseModel):
     scan_id: str
-    target_url: str
+    target_url: Optional[str] = None
+    scan_mode: ScanMode = ScanMode.DAST
+    github_repo: Optional[str] = None
     status: ScanStatus = ScanStatus.CRAWLING
+    sast_status: SASTStatus = SASTStatus.PENDING
     surface_report: Optional[SurfaceReport] = None
     hypotheses: list[Hypothesis] = []
     agent_results: list[AgentResult] = []
+    sast_findings: list[SASTFinding] = []
     error: Optional[str] = None

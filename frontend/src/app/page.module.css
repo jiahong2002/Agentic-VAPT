@@ -105,7 +105,11 @@
 .inputRow {
   display: flex;
   gap: 10px;
-  align-items: stretch;
+  align-items: center;
+}
+
+.cta {
+  width: 100%;
 }
 
 .inputWrapper {
@@ -259,4 +263,71 @@
   width: 1px;
   height: 32px;
   background: rgba(6, 182, 212, 0.15);
+}
+
+/* ─── Mode Selector ─────────────────────────────────────────────────────────── */
+.modeSelector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.modeTab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 12px;
+  background: rgba(10, 15, 30, 0.7);
+  border: 1px solid rgba(6, 182, 212, 0.15);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  backdrop-filter: blur(8px);
+}
+
+.modeTab:hover:not(:disabled) {
+  border-color: rgba(6, 182, 212, 0.4);
+  background: rgba(6, 182, 212, 0.06);
+}
+
+.modeTabActive {
+  border-color: #06b6d4;
+  background: rgba(6, 182, 212, 0.1);
+  box-shadow: 0 0 16px rgba(6, 182, 212, 0.15);
+}
+
+.modeTabLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+  letter-spacing: 0.5px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.modeTabActive .modeTabLabel {
+  color: #06b6d4;
+}
+
+.modeTabDesc {
+  font-size: 10px;
+  color: #475569;
+  letter-spacing: 0.2px;
+}
+
+.modeTabActive .modeTabDesc {
+  color: #64748b;
+}
+
+/* ─── GitHub Section ────────────────────────────────────────────────────────── */
+.githubSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.githubRow {
+  display: flex;
+  gap: 10px;
 }

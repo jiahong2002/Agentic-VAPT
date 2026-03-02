@@ -7,6 +7,8 @@ import styles from './scan.module.css';
 type Phase = 'CRAWLING' | 'SCANNING' | 'AWAITING_APPROVAL' | 'EXPLOITING' | 'DONE' | 'ERROR';
 type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
 type AgentStatus = 'PENDING' | 'RUNNING' | 'CONFIRMED' | 'UNCONFIRMED' | 'ERROR';
+type SASTStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'ERROR';
+type ScanMode = 'DAST' | 'SAST' | 'BOTH';
 
 interface Hypothesis {
   id: string;
@@ -33,6 +35,19 @@ interface ScanSummary {
   header_issues?: number;
   discovered_urls?: string[];
   scanner_findings_count?: number;
+}
+
+interface SASTFinding {
+  id: string;
+  title: string;
+  file_path: string;
+  line_number?: number;
+  technique: string;
+  severity: Severity;
+  description: string;
+  code_snippet: string;
+  patch: string;
+  explanation: string;
 }
 
 const PHASES: Phase[] = ['CRAWLING', 'SCANNING', 'AWAITING_APPROVAL', 'EXPLOITING', 'DONE'];
@@ -274,6 +289,47 @@ function UrlTabBar({ hypotheses, selected, onSelect }: {
   );
 }
 
+// ─── SAST Finding Card ────────────────────────────────────────────────────────
+function SASTFindingCard({ finding }: { finding: SASTFinding }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const renderDiff = (patch: string) =>
+    patch.split('\n').map((line, i) => {
+      let cls = styles.diffLine;
+      if (line.startsWith('+') && !line.startsWith('+++')) cls = `${styles.diffLine} ${styles.lineAdded}`;
+      else if (line.startsWith('-') && !line.startsWith('---')) cls = `${styles.diffLine} ${styles.lineRemoved}`;
+      else if (line.startsWith('@@')) cls = `${styles.diffLine} ${styles.lineHunk}`;
+      return <div key={i} className={cls}>{line || ' '}</div>;
+    });
+
+  return (
+    <div className={styles.sastCard}>
+      <div className={styles.sastCardHeader}>
+        <span className={severityClass(finding.severity)}>{finding.severity}</span>
+        <span className={styles.sastTitle}>{finding.title}</span>
+      </div>
+      <div className={styles.sastMeta}>
+        <span className={styles.sastFile}>{finding.file_path}{finding.line_number ? `:${finding.line_number}` : ''}</span>
+        <span className={styles.sastTechnique}>{finding.technique}</span>
+      </div>
+      <p className={styles.sastDesc}>{finding.description}</p>
+      {finding.patch && (
+        <button className={styles.diffToggle} onClick={() => setExpanded(p => !p)}>
+          {expanded ? '▲ Hide patch' : '▼ Show patch'}
+        </button>
+      )}
+      {expanded && finding.patch && (
+        <div className={styles.diffBlock}>
+          {renderDiff(finding.patch)}
+        </div>
+      )}
+      {expanded && finding.explanation && (
+        <p className={styles.sastExplanation}>{finding.explanation}</p>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Scan Dashboard ──────────────────────────────────────────────────────
 export default function ScanPage() {
   const { id: scanId } = useParams<{ id: string }>();
@@ -288,9 +344,13 @@ export default function ScanPage() {
   const [approved, setApproved] = useState(false);
   const [cancelled, setCancelled] = useState(false);
   const [done, setDone] = useState(false);
-  const [doneStats, setDoneStats] = useState({ total: 0, confirmed: 0 });
+  const [doneStats, setDoneStats] = useState({ total: 0, confirmed: 0, sast_count: 0 });
   const [logs, setLogs] = useState<string[]>([]);
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
+  // SAST state
+  const [scanMode, setScanMode] = useState<ScanMode>('DAST');
+  const [sastStatus, setSastStatus] = useState<SASTStatus>('PENDING');
+  const [sastFindings, setSastFindings] = useState<SASTFinding[]>([]);
   const logsRef = useRef<HTMLDivElement>(null);
 
   const addLog = (msg: string) => setLogs(prev => [...prev.slice(-50), msg]);
@@ -325,12 +385,25 @@ export default function ScanPage() {
       addLog(`[Agent] ${d.title} → ${d.status} (${d.severity})`);
     });
 
+    es.addEventListener('sast_status', e => {
+      const d = JSON.parse(e.data);
+      setSastStatus(d.status as SASTStatus);
+      if (d.status === 'RUNNING') setScanMode(prev => prev === 'DAST' ? 'SAST' : 'BOTH');
+      addLog(`[SAST] ${d.message || d.status}`);
+    });
+
+    es.addEventListener('sast_finding', e => {
+      const d = JSON.parse(e.data) as SASTFinding;
+      setSastFindings(prev => [...prev, d]);
+      addLog(`[SAST] ${d.severity} — ${d.title} in ${d.file_path}`);
+    });
+
     es.addEventListener('done', e => {
       const d = JSON.parse(e.data);
       setDone(true);
       setDoneStats(d);
       setPhase('DONE');
-      addLog(`[Done] ${d.confirmed}/${d.total} vulnerabilities confirmed`);
+      addLog(`[Done] ${d.confirmed}/${d.total} DAST vulns confirmed · ${d.sast_count ?? 0} SAST findings`);
     });
 
     es.addEventListener('error', e => {
@@ -458,6 +531,30 @@ export default function ScanPage() {
             </div>
           )}
 
+          {/* SAST Stats */}
+          {(sastStatus !== 'PENDING' || sastFindings.length > 0) && (
+            <div className={styles.surfaceCard}>
+              <div className={styles.cardTitle}>
+                SAST Analysis
+                {sastStatus === 'RUNNING' && <span className={styles.pulse} style={{ marginLeft: 8 }} />}
+              </div>
+              <div className={styles.surfaceGrid}>
+                <div className={styles.surfaceStat}>
+                  <span className={styles.surfaceNum} style={{ color: '#f97316' }}>{sastFindings.length}</span>
+                  <span className={styles.surfaceLabel}>Findings</span>
+                </div>
+                <div className={styles.surfaceStat}>
+                  <span className={styles.surfaceNum} style={{
+                    color: sastStatus === 'DONE' ? '#22c55e' : sastStatus === 'ERROR' ? '#ef4444' : '#a78bfa'
+                  }}>
+                    {sastStatus}
+                  </span>
+                  <span className={styles.surfaceLabel}>Status</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Terminal Log */}
           <div className={styles.logCard}>
             <div className={styles.cardTitle}>Live Log</div>
@@ -521,6 +618,19 @@ export default function ScanPage() {
           {visibleHypotheses.length === 0 && hypotheses.length > 0 && selectedUrl && (
             <div className={styles.noAgentsMsg}>
               No agents assigned to this page yet.
+            </div>
+          )}
+
+          {/* SAST Findings Panel */}
+          {sastFindings.length > 0 && (
+            <div className={styles.sastPanel}>
+              <div className={styles.sastPanelHeader}>
+                <span className={styles.cardTitle}>SAST Findings</span>
+                <span className={styles.sastCount}>{sastFindings.length} issue{sastFindings.length !== 1 ? 's' : ''}</span>
+              </div>
+              {sastFindings.map(f => (
+                <SASTFindingCard key={f.id} finding={f} />
+              ))}
             </div>
           )}
         </div>

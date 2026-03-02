@@ -1,24 +1,27 @@
 import asyncio
 import json
 import uuid
-from typing import AsyncGenerator
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse, Response
+from fastapi.responses import HTMLResponse, Response
 from sse_starlette.sse import EventSourceResponse
-from models import ScanRequest, ScanState, ScanStatus, AgentResult
+from models import (
+    ScanRequest, ScanState, ScanStatus, ScanMode, SASTStatus, AgentResult
+)
 from pipeline.crawler import crawl
 from pipeline.scanner import build_surface_notes, audit_headers
 from pipeline.vuln_scanner import run_nuclei
 from agents.recon_agent import run_recon_agent
 from agents.orchestrator import run_all_exploit_agents
+from agents.sast_agent import run_sast_agent
 from reporters.report_compiler import compile_report
 
 router = APIRouter()
 
-# In-memory store: scan_id → ScanState
+# In-memory stores
 _scans: dict[str, ScanState] = {}
-# Event queues: scan_id → list of SSE events
 _event_queues: dict[str, asyncio.Queue] = {}
+# PATs stored separately to avoid logging them in scan state
+_pats: dict[str, str] = {}
 
 
 def _push(scan_id: str, event: str, data: dict):
@@ -27,14 +30,15 @@ def _push(scan_id: str, event: str, data: dict):
         q.put_nowait({"event": event, "data": json.dumps(data)})
 
 
-async def _run_pipeline(scan_id: str):
+# ── DAST pipeline (existing logic, extracted) ─────────────────────────────────
+async def _run_dast_pipeline(scan_id: str):
     state = _scans[scan_id]
     try:
-        # ── Phase 1: Crawl ──────────────────────────────────────────────
+        # Phase 1: Crawl
         _push(scan_id, "phase", {"phase": "CRAWLING", "message": "Crawling target..."})
         surface = await crawl(state.target_url)
 
-        # ── Phase 2: Active Vulnerability Scan (Nuclei) ─────────────────
+        # Phase 2: Active Vulnerability Scan (Nuclei)
         state.status = ScanStatus.SCANNING
         _push(scan_id, "phase", {"phase": "SCANNING", "message": "Running Nuclei active vulnerability scan..."})
         scanner_findings = await run_nuclei(state.target_url)
@@ -51,7 +55,7 @@ async def _run_pipeline(scan_id: str):
             "scanner_findings_count": len(scanner_findings),
         })
 
-        # ── Phase 3: Recon Agent ────────────────────────────────────────
+        # Phase 3: Recon Agent
         _push(scan_id, "phase", {"phase": "SCANNING", "message": "Recon Agent assigning vulnerability investigations..."})
         hypotheses = await run_recon_agent(surface)
         state.hypotheses = hypotheses
@@ -70,11 +74,10 @@ async def _run_pipeline(scan_id: str):
             ],
         })
 
-        # ── Phase 4: Await human approval ──────────────────────────────
+        # Phase 4: Await human approval
         state.status = ScanStatus.AWAITING_APPROVAL
         _push(scan_id, "phase", {"phase": "AWAITING_APPROVAL", "message": "Awaiting user authorization to proceed..."})
 
-        # Wait for approval signal (set by /approve endpoint)
         while state.status == ScanStatus.AWAITING_APPROVAL:
             await asyncio.sleep(0.5)
 
@@ -82,7 +85,7 @@ async def _run_pipeline(scan_id: str):
             _push(scan_id, "error", {"message": "Scan cancelled by user"})
             return
 
-        # ── Phase 5: Exploit Agents ─────────────────────────────────────
+        # Phase 5: Exploit Agents
         _push(scan_id, "phase", {"phase": "EXPLOITING", "message": f"Launching {len(hypotheses)} vulnerability investigation agents..."})
 
         async def agent_done_callback(result: AgentResult):
@@ -99,34 +102,110 @@ async def _run_pipeline(scan_id: str):
         results = await run_all_exploit_agents(hypotheses, state, agent_done_callback)
         state.agent_results = results
 
-        # ── Phase 6: Done ───────────────────────────────────────────────
-        state.status = ScanStatus.DONE
-        confirmed = sum(1 for r in results if r.status.value == "CONFIRMED")
-        _push(scan_id, "phase", {"phase": "DONE", "message": "All agents complete."})
-        _push(scan_id, "done", {
-            "total": len(results),
-            "confirmed": confirmed,
-            "unconfirmed": len(results) - confirmed,
+    except Exception as e:
+        state.status = ScanStatus.ERROR
+        state.error = str(e)
+        _push(scan_id, "error", {"message": str(e)})
+        raise
+
+
+# ── SAST pipeline ─────────────────────────────────────────────────────────────
+async def _run_sast_pipeline(scan_id: str):
+    state = _scans[scan_id]
+    pat = _pats.get(scan_id, "")
+    try:
+        state.sast_status = SASTStatus.RUNNING
+        _push(scan_id, "sast_status", {"status": "RUNNING", "message": "Analyzing repository..."})
+
+        owner, repo_name = (state.github_repo or "").split("/", 1)
+        findings = await run_sast_agent(
+            pat=pat,
+            owner=owner,
+            repo=repo_name,
+            push_fn=lambda event, data: _push(scan_id, event, data),
+        )
+        state.sast_findings = findings
+        state.sast_status = SASTStatus.DONE
+        _push(scan_id, "sast_status", {
+            "status": "DONE",
+            "count": len(findings),
+            "message": f"SAST complete — {len(findings)} finding(s) identified",
         })
+
+    except Exception as e:
+        state.sast_status = SASTStatus.ERROR
+        _push(scan_id, "sast_status", {"status": "ERROR", "message": str(e)})
+
+
+# ── Combined pipeline ─────────────────────────────────────────────────────────
+async def _run_pipeline(scan_id: str):
+    state = _scans[scan_id]
+    try:
+        tasks = []
+        if state.scan_mode in (ScanMode.DAST, ScanMode.BOTH):
+            tasks.append(_run_dast_pipeline(scan_id))
+        if state.scan_mode in (ScanMode.SAST, ScanMode.BOTH):
+            tasks.append(_run_sast_pipeline(scan_id))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Propagate any unhandled exceptions
+        for r in results:
+            if isinstance(r, Exception) and not isinstance(r, asyncio.CancelledError):
+                if state.status != ScanStatus.ERROR:
+                    state.status = ScanStatus.ERROR
+                    state.error = str(r)
+
+        if state.status != ScanStatus.ERROR:
+            state.status = ScanStatus.DONE
+            dast_confirmed = sum(1 for r in state.agent_results if r.status.value == "CONFIRMED")
+            _push(scan_id, "phase", {"phase": "DONE", "message": "All agents complete."})
+            _push(scan_id, "done", {
+                "total": len(state.agent_results),
+                "confirmed": dast_confirmed,
+                "unconfirmed": len(state.agent_results) - dast_confirmed,
+                "sast_count": len(state.sast_findings),
+            })
 
     except Exception as e:
         state.status = ScanStatus.ERROR
         state.error = str(e)
         _push(scan_id, "error", {"message": str(e)})
     finally:
-        # Signal SSE stream to end after short delay
+        # Clean up PAT from memory
+        _pats.pop(scan_id, None)
         await asyncio.sleep(2)
         q = _event_queues.get(scan_id)
         if q:
-            q.put_nowait(None)  # sentinel
+            q.put_nowait(None)  # sentinel to close SSE stream
 
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/scan/start")
 async def start_scan(request: ScanRequest):
+    # Validate required fields per mode
+    if request.mode in (ScanMode.DAST, ScanMode.BOTH) and not request.url:
+        raise HTTPException(400, "Target URL is required for DAST and Both modes")
+    if request.mode in (ScanMode.SAST, ScanMode.BOTH):
+        if not request.github_pat:
+            raise HTTPException(400, "GitHub PAT is required for SAST and Both modes")
+        if not request.github_repo or "/" not in request.github_repo:
+            raise HTTPException(400, "GitHub repo must be in 'owner/repo' format")
+
     scan_id = str(uuid.uuid4())
-    state = ScanState(scan_id=scan_id, target_url=str(request.url))
+    state = ScanState(
+        scan_id=scan_id,
+        target_url=str(request.url) if request.url else None,
+        scan_mode=request.mode,
+        github_repo=request.github_repo,
+    )
     _scans[scan_id] = state
     _event_queues[scan_id] = asyncio.Queue()
+
+    if request.github_pat:
+        _pats[scan_id] = request.github_pat
+
     asyncio.create_task(_run_pipeline(scan_id))
     return {"scan_id": scan_id}
 
@@ -179,8 +258,22 @@ async def get_status(scan_id: str):
     return {
         "scan_id": state.scan_id,
         "status": state.status.value,
+        "scan_mode": state.scan_mode.value,
+        "sast_status": state.sast_status.value,
         "hypotheses_count": len(state.hypotheses),
         "results_count": len(state.agent_results),
+        "sast_findings_count": len(state.sast_findings),
+    }
+
+
+@router.get("/scan/{scan_id}/sast-findings")
+async def get_sast_findings(scan_id: str):
+    state = _scans.get(scan_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    return {
+        "status": state.sast_status.value,
+        "findings": [f.model_dump() for f in state.sast_findings],
     }
 
 
