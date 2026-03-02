@@ -1,11 +1,14 @@
 import asyncio
 import json
 import uuid
-from fastapi import APIRouter, HTTPException, Depends
-from auth import get_current_user
+from fastapi import APIRouter, HTTPException, Depends, Query
+from auth import get_current_user, decode_token
 from fastapi.responses import HTMLResponse, Response
 from sse_starlette.sse import EventSourceResponse
-from models import ScanRequest, ScanState, ScanStatus, AgentResult
+from models import (
+    ScanRequest, ScanState, ScanStatus,
+    SurfaceReport, Hypothesis, AgentResult, AgentStatus, Severity, ExploitStep,
+)
 from pipeline.crawler import crawl
 from pipeline.scanner import build_surface_notes, audit_headers
 from pipeline.vuln_scanner import run_nuclei
@@ -194,6 +197,10 @@ async def _run_pipeline(scan_id: str):
         q = _event_queues.get(scan_id)
         if q:
             q.put_nowait(None)  # sentinel
+        # Clean up in-memory state after SSE consumers have drained
+        await asyncio.sleep(60)
+        _scans.pop(scan_id, None)
+        _event_queues.pop(scan_id, None)
 
 
 @router.post("/scan/start")
@@ -219,7 +226,12 @@ async def start_scan(request: ScanRequest, _user: str = Depends(get_current_user
 
 
 @router.get("/scan/{scan_id}/events")
-async def scan_events(scan_id: str):
+async def scan_events(scan_id: str, token: str = Query(...)):
+    try:
+        decode_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     if scan_id not in _scans:
         raise HTTPException(status_code=404, detail="Scan not found")
 
@@ -260,33 +272,190 @@ async def cancel_scan(scan_id: str, _user: str = Depends(get_current_user)):
     return {"ok": True}
 
 
-@router.get("/scan/{scan_id}/status")
-async def get_status(scan_id: str):
+
+@router.get("/scan/{scan_id}/state")
+async def get_scan_state(scan_id: str, _user: str = Depends(get_current_user)):
+    """Return a full snapshot of the scan — used to rehydrate the UI on reconnect."""
+
+    def _fmt_hypotheses(hyps):
+        return [
+            {
+                "id": h.id if hasattr(h, "id") else h["id"],
+                "title": h.title if hasattr(h, "title") else h["title"],
+                "technique": h.technique if hasattr(h, "technique") else h["technique"],
+                "severity": (h.severity_estimate.value if hasattr(h, "severity_estimate") else h.get("severity_estimate", "MEDIUM")),
+                "target_url": h.target_url if hasattr(h, "target_url") else h.get("target_url"),
+                "attack_surface": h.attack_surface if hasattr(h, "attack_surface") else h.get("attack_surface"),
+            }
+            for h in hyps
+        ]
+
+    def _fmt_results(results):
+        out = []
+        for r in results:
+            if hasattr(r, "hypothesis_id"):
+                out.append({
+                    "hypothesis_id": r.hypothesis_id,
+                    "title": r.hypothesis_title,
+                    "status": r.status.value,
+                    "severity": r.severity.value,
+                    "technique": r.technique,
+                    "steps_count": len(r.steps),
+                })
+            else:
+                out.append({
+                    "hypothesis_id": r["hypothesis_id"],
+                    "title": r.get("hypothesis_title"),
+                    "status": r["status"],
+                    "severity": r["severity"],
+                    "technique": r.get("technique"),
+                    "steps_count": len(r.get("steps") or []),
+                })
+        return out
+
+    # ── In-memory (active scan) ──────────────────────────────────
     state = _scans.get(scan_id)
-    if not state:
-        raise HTTPException(status_code=404, detail="Scan not found")
-    return {
-        "scan_id": state.scan_id,
-        "status": state.status.value,
-        "hypotheses_count": len(state.hypotheses),
-        "results_count": len(state.agent_results),
-    }
+    if state:
+        results_list = _fmt_results(state.agent_results)
+        surface = None
+        if state.surface_report:
+            from pipeline.scanner import audit_headers
+            header_findings = audit_headers(state.surface_report)
+            surface = {
+                "urls_found": len(state.surface_report.discovered_urls),
+                "forms_found": len(state.surface_report.forms),
+                "tech_stack": state.surface_report.tech_stack,
+                "discovered_urls": state.surface_report.discovered_urls[:50],
+                "header_issues": len(header_findings),
+                "scanner_findings_count": len(state.surface_report.scanner_findings or []),
+            }
+        return {
+            "status": state.status.value,
+            "surface": surface,
+            "hypotheses": _fmt_hypotheses(state.hypotheses),
+            "agent_results": results_list,
+            "done_stats": {
+                "total": len(results_list),
+                "confirmed": sum(1 for r in results_list if r["status"] == "CONFIRMED"),
+            } if state.status.value == "DONE" else None,
+        }
+
+    # ── Supabase fallback (scan not in memory / server restarted) ─
+    try:
+        sb = await get_supabase()
+        scan_row = await sb.table("scans").select("status, surface_report").eq("id", scan_id).eq("user_id", _user).maybe_single().execute()
+        if not scan_row.data:
+            raise HTTPException(status_code=404, detail="Scan not found")
+
+        hyp_rows = await sb.table("hypotheses").select("id, title, technique, severity_estimate, target_url, attack_surface").eq("scan_id", scan_id).execute()
+        res_rows = await sb.table("agent_results").select("hypothesis_id, hypothesis_title, status, severity, technique, steps").eq("scan_id", scan_id).execute()
+
+        results_list = _fmt_results(res_rows.data or [])
+        raw_surface = scan_row.data.get("surface_report")
+        surface = None
+        if raw_surface:
+            surface = {
+                "urls_found": len(raw_surface.get("discovered_urls") or []),
+                "forms_found": len(raw_surface.get("forms") or []),
+                "tech_stack": raw_surface.get("tech_stack") or [],
+                "discovered_urls": (raw_surface.get("discovered_urls") or [])[:50],
+                "header_issues": 0,
+                "scanner_findings_count": len(raw_surface.get("scanner_findings") or []),
+            }
+
+        return {
+            "status": scan_row.data["status"],
+            "surface": surface,
+            "hypotheses": _fmt_hypotheses(hyp_rows.data or []),
+            "agent_results": results_list,
+            "done_stats": {
+                "total": len(results_list),
+                "confirmed": sum(1 for r in results_list if r["status"] == "CONFIRMED"),
+            } if scan_row.data["status"] == "DONE" else None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _load_state(scan_id: str, user_id: str) -> ScanState:
+    """Return ScanState from memory (active scan) or reconstruct it from Supabase."""
+    state = _scans.get(scan_id)
+    if state:
+        return state
+
+    try:
+        sb = await get_supabase()
+        scan_row = (
+            await sb.table("scans").select("*")
+            .eq("id", scan_id).eq("user_id", user_id)
+            .maybe_single().execute()
+        )
+        if not scan_row.data:
+            raise HTTPException(status_code=404, detail="Scan not found")
+
+        row = scan_row.data
+        surface = SurfaceReport(**row["surface_report"]) if row.get("surface_report") else None
+
+        hyp_rows = await sb.table("hypotheses").select("*").eq("scan_id", scan_id).execute()
+        hypotheses = [
+            Hypothesis(
+                id=h["id"],
+                title=h["title"],
+                target_url=h.get("target_url", ""),
+                attack_surface=h.get("attack_surface", ""),
+                technique=h.get("technique", ""),
+                attack_hints=h.get("attack_hints", ""),
+                rationale=h.get("rationale", ""),
+                severity_estimate=h.get("severity_estimate", "MEDIUM"),
+            )
+            for h in (hyp_rows.data or [])
+        ]
+
+        res_rows = await sb.table("agent_results").select("*").eq("scan_id", scan_id).execute()
+        agent_results = [
+            AgentResult(
+                hypothesis_id=r["hypothesis_id"],
+                hypothesis_title=r.get("hypothesis_title", ""),
+                technique=r.get("technique", ""),
+                status=r["status"],
+                severity=r["severity"],
+                steps=[ExploitStep(**s) for s in (r.get("steps") or [])],
+                summary=r.get("summary", ""),
+                remediation=r.get("remediation", ""),
+                cvss_score=r.get("cvss_score"),
+                screenshot_paths=r.get("screenshot_paths") or [],
+                false_positive_reason=r.get("false_positive_reason"),
+            )
+            for r in (res_rows.data or [])
+        ]
+
+        return ScanState(
+            scan_id=scan_id,
+            user_id=user_id,
+            target_url=row["target_url"],
+            status=row["status"],
+            surface_report=surface,
+            hypotheses=hypotheses,
+            agent_results=agent_results,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/scan/{scan_id}/report")
 async def get_report(scan_id: str, _user: str = Depends(get_current_user)):
-    state = _scans.get(scan_id)
-    if not state:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    state = await _load_state(scan_id, _user)
     html = await compile_report(state)
     return HTMLResponse(content=html)
 
 
 @router.get("/scan/{scan_id}/report/pdf")
 async def get_report_pdf(scan_id: str, _user: str = Depends(get_current_user)):
-    state = _scans.get(scan_id)
-    if not state:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    state = await _load_state(scan_id, _user)
     html = await compile_report(state)
     try:
         from playwright.async_api import async_playwright
