@@ -17,6 +17,9 @@ export default function DashboardPage() {
   const [repoUrl, setRepoUrl] = useState('');
   const [pat, setPat] = useState('');
 
+  // Deep scan state
+  const [deepScanEnabled, setDeepScanEnabled] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!agreed) { setError('You must confirm authorization to proceed.'); return; }
@@ -25,7 +28,7 @@ export default function DashboardPage() {
     setError('');
     setLoading(true);
 
-    const body: Record<string, unknown> = { url: url.trim() };
+    const body: Record<string, unknown> = { url: url.trim(), deep_scan: deepScanEnabled };
     if (sastEnabled) {
       body.sast_config = {
         repo_url: repoUrl.trim(),
@@ -165,6 +168,29 @@ export default function DashboardPage() {
               )}
             </div>
 
+            {/* ── Deep Scan ── */}
+            <div className={styles.deepSection}>
+              <button
+                type="button"
+                className={styles.deepToggle}
+                onClick={() => setDeepScanEnabled(v => !v)}
+                disabled={loading}
+              >
+                <span className={styles.deepToggleLabel}>
+                  Deep Scan
+                  <span className={styles.deepBadge}>Slow</span>
+                </span>
+                <span className={styles.deepToggleDesc}>
+                  {deepScanEnabled
+                    ? 'Depth 3 crawl + full Nuclei template coverage'
+                    : 'Depth 2 crawl, curated templates (faster)'}
+                </span>
+                <div className={`${styles.deepSwitch} ${deepScanEnabled ? styles.deepSwitchOn : ''}`}>
+                  <div className={`${styles.deepKnob} ${deepScanEnabled ? styles.deepKnobOn : ''}`} />
+                </div>
+              </button>
+            </div>
+
             {/* ── Authorization ── */}
             <label className={styles.authLabel}>
               <input
@@ -191,7 +217,7 @@ export default function DashboardPage() {
               {loading ? (
                 <><span className={styles.spinner} /> Starting scan...</>
               ) : (
-                <>Launch {sastEnabled ? 'DAST + SAST' : 'Scan'} <span className={styles.arrow}>→</span></>
+                <>Launch {deepScanEnabled ? 'Deep ' : ''}{sastEnabled ? 'DAST + SAST' : 'Scan'} <span className={styles.arrow}>→</span></>
               )}
             </button>
           </form>

@@ -6,7 +6,7 @@ from playwright.async_api import async_playwright, Page
 async def navigate(page: Page, url: str) -> dict:
     """Navigate to a URL and return status + headers."""
     try:
-        resp = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+        resp = await page.goto(url, wait_until="load", timeout=15000)
         return {
             "ok": True,
             "status": resp.status if resp else 0,

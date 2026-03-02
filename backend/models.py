@@ -11,6 +11,7 @@ class SASTConfig(BaseModel):
 class ScanRequest(BaseModel):
     url: str
     sast_config: Optional[SASTConfig] = None
+    deep_scan: bool = False
 
 
 class ScanStatus(str, Enum):
@@ -101,6 +102,7 @@ class ScanState(BaseModel):
     user_id: str = ""
     target_url: str
     status: ScanStatus = ScanStatus.CRAWLING
+    deep_scan: bool = False
     surface_report: Optional[SurfaceReport] = None
     hypotheses: list[Hypothesis] = []
     agent_results: list[AgentResult] = []

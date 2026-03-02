@@ -5,7 +5,20 @@ from playwright.async_api import async_playwright, Browser, BrowserContext
 from models import SurfaceReport
 
 
-async def crawl(target_url: str, max_depth: int = 2) -> SurfaceReport:
+_COMMON_PATHS = [
+    "/robots.txt", "/sitemap.xml", "/sitemap_index.xml",
+    "/api/", "/api/v1/", "/api/v2/", "/graphql", "/graphiql",
+    "/.well-known/security.txt", "/swagger", "/swagger-ui.html",
+    "/swagger/index.html", "/openapi.json", "/api-docs",
+    "/admin", "/admin/", "/login", "/register", "/signup",
+    "/wp-login.php", "/phpinfo.php", "/.env", "/config.json",
+    "/server-status", "/actuator", "/actuator/health",
+]
+
+
+async def crawl(target_url: str, max_depth: int = 2, deep: bool = False) -> SurfaceReport:
+    if deep:
+        max_depth = 3
     """Crawl the target URL and return a rich surface report."""
     visited: set[str] = set()
     queue: list[tuple[str, int]] = [(target_url, 0)]
@@ -33,7 +46,9 @@ async def crawl(target_url: str, max_depth: int = 2) -> SurfaceReport:
 
             page = await context.new_page()
             try:
-                resp = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                resp = await page.goto(url, wait_until="load", timeout=15000)
+                # Give Angular/React/Vue time to bootstrap and render components
+                await page.wait_for_timeout(1500)
                 if resp and not headers_captured:
                     headers_captured = dict(resp.headers)
                     _detect_tech(headers_captured, tech_stack)
@@ -87,16 +102,27 @@ async def crawl(target_url: str, max_depth: int = 2) -> SurfaceReport:
 
         # BFS crawl
         while queue:
-            batch = []
-            next_queue = []
-            for url, depth in queue:
-                if url not in visited and depth <= max_depth:
-                    batch.append((url, depth))
-                else:
-                    next_queue.append((url, depth))
-            queue = next_queue
-            if batch:
-                await asyncio.gather(*[process_page(url, depth) for url, depth in batch[:10]])
+            # Only keep unvisited URLs within max_depth; drop everything else
+            batch = [
+                (url, depth) for url, depth in queue
+                if url not in visited and depth <= max_depth
+            ]
+            queue = []  # Reset — process_page will repopulate with new discoveries
+            if not batch:
+                break
+            # Process in chunks of 10 concurrent pages
+            for i in range(0, len(batch), 10):
+                await asyncio.gather(*[process_page(url, depth) for url, depth in batch[i:i + 10]])
+
+        # Deep scan: probe common well-known paths regardless of what the crawler found
+        if deep:
+            probe_urls = [
+                urljoin(target_url, path)
+                for path in _COMMON_PATHS
+                if urljoin(target_url, path) not in visited
+            ]
+            for i in range(0, len(probe_urls), 10):
+                await asyncio.gather(*[process_page(url, 0) for url in probe_urls[i:i + 10]])
 
         await browser.close()
 

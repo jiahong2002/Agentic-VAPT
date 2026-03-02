@@ -64,14 +64,14 @@ async def _run_pipeline(scan_id: str):
     sast_tmp = None
     try:
         # ── Phase 1: Crawl ──────────────────────────────────────────────
-        _push(scan_id, "phase", {"phase": "CRAWLING", "message": "Crawling target..."})
-        surface = await crawl(state.target_url)
+        _push(scan_id, "phase", {"phase": "CRAWLING", "message": "Crawling target..." + (" (deep mode)" if state.deep_scan else "")})
+        surface = await crawl(state.target_url, deep=state.deep_scan)
 
         # ── Phase 2: Active Vulnerability Scan (Nuclei) ─────────────────
         state.status = ScanStatus.SCANNING
         asyncio.create_task(_sb_update_scan(scan_id, {"status": "SCANNING"}))
         _push(scan_id, "phase", {"phase": "SCANNING", "message": "Running Nuclei active vulnerability scan..."})
-        scanner_findings = await run_nuclei(state.target_url)
+        scanner_findings = await run_nuclei(state.target_url, deep=state.deep_scan)
         surface.scanner_findings = scanner_findings
 
         state.surface_report = surface
@@ -248,13 +248,24 @@ async def _run_pipeline(scan_id: str):
         _event_queues.pop(scan_id, None)
 
 
+def _resolve_target_url(url: str) -> str:
+    """When running inside Docker, rewrite localhost → host.docker.internal
+    so the crawler can reach services on the host machine."""
+    if os.path.exists("/.dockerenv"):
+        url = url.replace("://localhost", "://host.docker.internal")
+        url = url.replace("://127.0.0.1", "://host.docker.internal")
+    return url
+
+
 @router.post("/scan/start")
 async def start_scan(request: ScanRequest, _user: str = Depends(get_current_user)):
     scan_id = str(uuid.uuid4())
+    target_url = _resolve_target_url(str(request.url))
     state = ScanState(
         scan_id=scan_id,
-        target_url=str(request.url),
+        target_url=target_url,
         sast_config=request.sast_config,
+        deep_scan=request.deep_scan,
         user_id=_user
     )
     _scans[scan_id] = state
@@ -265,7 +276,7 @@ async def start_scan(request: ScanRequest, _user: str = Depends(get_current_user
         await sb.table("scans").insert({
             "id": scan_id,
             "user_id": _user,
-            "target_url": str(request.url),
+            "target_url": target_url,
             "status": "CRAWLING",
         }).execute()
     except Exception:

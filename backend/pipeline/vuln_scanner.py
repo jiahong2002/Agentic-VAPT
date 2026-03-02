@@ -19,15 +19,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Template categories to run — chosen for relevance to web app pentesting
-# and to complete within a reasonable time. Skip dos/fuzz/ssl/headless.
+# Template categories to run in standard mode
 _NUCLEI_TAGS = "misconfig,exposure,default-login,tech,xss,sqli,ssrf,rce,lfi"
 
-# Hard cap on total scan time — Nuclei can get slow on large template sets
+# Standard scan timeout
 _SCAN_TIMEOUT_SECS = 180
+# Deep scan timeout — more templates, needs more time
+_SCAN_TIMEOUT_DEEP_SECS = 360
 
 
-async def run_nuclei(target_url: str) -> list[dict]:
+async def run_nuclei(target_url: str, deep: bool = False) -> list[dict]:
     """
     Run Nuclei against target_url and return a list of normalised findings.
     Returns [] if Nuclei is not installed or the scan fails.
@@ -45,20 +46,25 @@ async def run_nuclei(target_url: str) -> list[dict]:
         logger.info("Nuclei not found in PATH — skipping active scan. Install: brew install nuclei")
         return []
 
+    timeout = _SCAN_TIMEOUT_DEEP_SECS if deep else _SCAN_TIMEOUT_SECS
+
     cmd = [
         "nuclei",
         "-u", target_url,
-        "-tags", _NUCLEI_TAGS,
         "-json",              # JSONL output to stdout, one finding per line
         "-silent",            # suppress banner/progress to stderr
         "-nc",                # no colour codes
-        "-c", "25",           # concurrent template goroutines
+        "-c", "50" if deep else "25",   # more concurrency in deep mode
         "-timeout", "5",      # per-request timeout (seconds)
         "-retries", "1",
         "-exclude-tags", "dos,fuzz,ssl,headless,network,dns",
     ]
 
-    logger.info(f"[Nuclei] Starting scan: {' '.join(cmd)}")
+    # Standard mode: curated tags only. Deep mode: run all templates.
+    if not deep:
+        cmd.extend(["-tags", _NUCLEI_TAGS])
+
+    logger.info(f"[Nuclei] Starting {'deep ' if deep else ''}scan: {' '.join(cmd)}")
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -69,7 +75,7 @@ async def run_nuclei(target_url: str) -> list[dict]:
 
         try:
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=_SCAN_TIMEOUT_SECS
+                proc.communicate(), timeout=timeout
             )
         except asyncio.TimeoutError:
             logger.warning(f"[Nuclei] Scan timed out after {_SCAN_TIMEOUT_SECS}s — using partial results")
