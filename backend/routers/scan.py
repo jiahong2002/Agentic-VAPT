@@ -300,6 +300,25 @@ async def get_report_pdf(scan_id: str, _user: str = Depends(get_current_user)):
                 print_background=True,
             )
             await browser.close()
+
+        # Upload PDF to Supabase Storage (fire-and-forget)
+        async def _upload_pdf():
+            try:
+                sb = await get_supabase()
+                storage_path = f"{_user}/{scan_id}.pdf"
+                await sb.storage.from_("reports").upload(
+                    storage_path,
+                    pdf_bytes,
+                    {"content-type": "application/pdf", "upsert": "true"},
+                )
+                signed = await sb.storage.from_("reports").create_signed_url(storage_path, 60 * 60 * 24 * 365)
+                signed_url = signed.signed_url if hasattr(signed, "signed_url") else signed.get("signedURL", "")
+                if signed_url:
+                    await sb.table("scans").update({"report_pdf_url": signed_url}).eq("id", scan_id).execute()
+            except Exception:
+                pass
+        asyncio.create_task(_upload_pdf())
+
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
@@ -307,3 +326,21 @@ async def get_report_pdf(scan_id: str, _user: str = Depends(get_current_user)):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+
+
+@router.get("/scans")
+async def list_scans(_user: str = Depends(get_current_user)):
+    """Return the authenticated user's scan history (newest first)."""
+    try:
+        sb = await get_supabase()
+        result = await (
+            sb.table("scans")
+            .select("id, target_url, status, report_pdf_url, created_at, updated_at")
+            .eq("user_id", _user)
+            .order("created_at", desc=True)
+            .limit(50)
+            .execute()
+        )
+        return {"scans": result.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

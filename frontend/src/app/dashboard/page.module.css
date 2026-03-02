@@ -1,114 +1,71 @@
-.main {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
+.page {
+  flex: 1;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding: 48px 24px;
 }
 
-.canvas {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-}
-
-.overlay {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.container {
   width: 100%;
-  padding: 24px;
+  max-width: 600px;
 }
 
-.hero {
-  max-width: 680px;
-  width: 100%;
-  text-align: center;
+/* ── Header ─────────────────────────────────────────────────── */
+.header {
+  margin-bottom: 28px;
 }
 
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 3px;
-  color: #06b6d4;
-  text-transform: uppercase;
-  margin-bottom: 24px;
-  padding: 6px 16px;
-  border: 1px solid rgba(6, 182, 212, 0.25);
-  border-radius: 999px;
-  background: rgba(6, 182, 212, 0.05);
-  backdrop-filter: blur(8px);
+.title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 8px;
+  letter-spacing: -0.5px;
 }
 
-.tagDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #06b6d4;
-  box-shadow: 0 0 8px #06b6d4;
-  animation: blink 1.5s ease-in-out infinite;
+.subtitle {
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.6;
 }
 
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+/* ── Card ───────────────────────────────────────────────────── */
+.card {
+  background: rgba(14, 20, 38, 0.8);
+  border: 1px solid rgba(6, 182, 212, 0.12);
+  border-radius: 16px;
+  padding: 28px;
 }
 
-.headline {
-  font-size: clamp(42px, 7vw, 72px);
-  font-weight: 900;
-  line-height: 1.05;
-  margin-bottom: 20px;
-  letter-spacing: -2px;
-  color: #f1f5f9;
-  text-shadow: 0 0 60px rgba(6, 182, 212, 0.15);
-}
-
-.accentText {
-  background: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.subheadline {
-  font-size: 17px;
-  color: #94a3b8;
-  margin-bottom: 40px;
-  line-height: 1.7;
-  max-width: 540px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
+/* ── Form ───────────────────────────────────────────────────── */
 .form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-bottom: 40px;
+  gap: 20px;
 }
 
-.inputRow {
+.fieldGroup {
   display: flex;
-  gap: 10px;
-  align-items: stretch;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #64748b;
 }
 
 .inputWrapper {
   position: relative;
-  flex: 1;
 }
 
 .inputIcon {
   position: absolute;
-  left: 16px;
+  left: 14px;
   top: 50%;
   transform: translateY(-50%);
   color: #06b6d4;
@@ -119,166 +76,153 @@
 
 .input {
   width: 100%;
-  height: 56px;
-  padding: 0 16px 0 44px;
-  background: rgba(10, 15, 30, 0.85);
-  border: 1px solid rgba(6, 182, 212, 0.3);
-  border-radius: 12px;
+  height: 48px;
+  padding: 0 14px 0 42px;
+  background: rgba(7, 11, 20, 0.8);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+  border-radius: 10px;
   color: #e2e8f0;
-  font-size: 15px;
+  font-size: 14px;
   font-family: 'JetBrains Mono', monospace;
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
-  backdrop-filter: blur(12px);
+  box-sizing: border-box;
 }
 
 .input:focus {
   border-color: #06b6d4;
-  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.15), 0 0 20px rgba(6, 182, 212, 0.1);
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
 }
 
 .input::placeholder {
-  color: #475569;
+  color: #334155;
 }
 
-.cta {
-  height: 56px;
-  padding: 0 28px;
-  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
-  color: #000;
-  font-size: 15px;
-  font-weight: 700;
-  border: none;
-  border-radius: 12px;
-  cursor: pointer;
+/* ── Phase steps ────────────────────────────────────────────── */
+.phases {
   display: flex;
   align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-  transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
-  box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
-  font-family: inherit;
+  gap: 0;
+  padding: 16px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.cta:hover:not(:disabled) {
-  opacity: 0.92;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 24px rgba(6, 182, 212, 0.5);
+.phaseItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
 }
 
-.cta:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+.phaseNum {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: #06b6d4;
+  opacity: 0.7;
+  min-width: 22px;
 }
 
-.arrow {
-  font-size: 18px;
+.phaseName {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  line-height: 1.3;
 }
 
-.spinner {
-  width: 20px;
-  height: 20px;
-  border: 2px solid rgba(0, 0, 0, 0.3);
-  border-top-color: #000;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  display: block;
+.phaseDesc {
+  font-size: 11px;
+  color: #334155;
+  line-height: 1.3;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.phaseDivider {
+  width: 1px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 0 16px;
 }
 
+/* ── Authorization checkbox ─────────────────────────────────── */
 .authLabel {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  text-align: left;
   font-size: 13px;
-  color: #64748b;
+  color: #475569;
   cursor: pointer;
   line-height: 1.5;
 }
 
+.authLabel strong {
+  color: #64748b;
+}
+
 .checkbox {
-  width: 16px;
-  height: 16px;
-  min-width: 16px;
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
   margin-top: 2px;
   accent-color: #06b6d4;
   cursor: pointer;
 }
 
+/* ── Error ──────────────────────────────────────────────────── */
 .errorMsg {
-  color: #ef4444;
+  color: #f87171;
   font-size: 13px;
-  text-align: left;
   padding: 10px 14px;
-  background: rgba(239, 68, 68, 0.08);
+  background: rgba(239, 68, 68, 0.07);
   border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: 8px;
 }
 
-.stats {
+/* ── CTA button ─────────────────────────────────────────────── */
+.cta {
+  height: 48px;
+  padding: 0 24px;
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+  color: #000;
+  font-size: 14px;
+  font-weight: 700;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 24px;
-}
-
-.statItem {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.statNum {
-  font-size: 20px;
-  font-weight: 800;
-  color: #06b6d4;
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.statLabel {
-  font-size: 11px;
-  color: #475569;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.statDivider {
-  width: 1px;
-  height: 32px;
-  background: rgba(6, 182, 212, 0.15);
-}
-
-.userBar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-bottom: 20px;
-  font-size: 13px;
-}
-
-.userBarName {
-  color: var(--muted);
-}
-
-.logoutBtn {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  padding: 4px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
+  gap: 8px;
+  transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.25);
   font-family: inherit;
-  transition: color 0.2s, border-color 0.2s;
 }
 
-.logoutBtn:hover {
-  color: var(--text);
-  border-color: var(--border-bright);
+.cta:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+}
+
+.cta:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.arrow {
+  font-size: 16px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(0, 0, 0, 0.3);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
