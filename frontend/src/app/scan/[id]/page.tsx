@@ -6,7 +6,7 @@ import Link from 'next/link';
 import styles from './scan.module.css';
 import { apiFetch, API_BASE, getToken } from '../../../lib/auth';
 
-type Phase = 'CRAWLING' | 'SCANNING' | 'AWAITING_APPROVAL' | 'EXPLOITING' | 'DONE' | 'ERROR';
+type Phase = 'CRAWLING' | 'SCANNING' | 'SAST_CLONING' | 'SAST_ANALYZING' | 'AWAITING_APPROVAL' | 'EXPLOITING' | 'DONE' | 'ERROR';
 type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
 type AgentStatus = 'PENDING' | 'RUNNING' | 'CONFIRMED' | 'UNCONFIRMED' | 'ERROR';
 
@@ -37,10 +37,21 @@ interface ScanSummary {
   scanner_findings_count?: number;
 }
 
+interface SASTFinding {
+  tool: string;
+  rule_id: string;
+  severity: Severity;
+  file_path: string;
+  line_number: number | null;
+  message: string;
+}
+
 const PHASES: Phase[] = ['CRAWLING', 'SCANNING', 'AWAITING_APPROVAL', 'EXPLOITING', 'DONE'];
 const PHASE_LABELS: Record<Phase, string> = {
   CRAWLING: 'Crawl',
   SCANNING: 'Recon',
+  SAST_CLONING: 'SAST',
+  SAST_ANALYZING: 'SAST',
   AWAITING_APPROVAL: 'Approve',
   EXPLOITING: 'Exploit',
   DONE: 'Report',
@@ -302,6 +313,7 @@ export default function ScanPage() {
   const [stateLoaded, setStateLoaded] = useState(false);
   const [scanActive, setScanActive] = useState(true);
   const [exploitStartTime, setExploitStartTime] = useState<number | undefined>(undefined);
+  const [sastFindings, setSastFindings] = useState<SASTFinding[]>([]);
   const logsRef = useRef<HTMLDivElement>(null);
 
   const addLog = (msg: string) => setLogs(prev => [...prev.slice(-50), msg]);
@@ -400,6 +412,12 @@ export default function ScanPage() {
       const d = JSON.parse(e.data);
       setHypotheses(d.hypotheses || []);
       addLog(`[Recon] ${d.count} vulnerability investigations assigned`);
+    });
+
+    es.addEventListener('sast_findings', e => {
+      const d = JSON.parse(e.data);
+      setSastFindings(d.findings || []);
+      addLog(`[SAST] ${d.count} static analysis findings`);
     });
 
     es.addEventListener('agent_result', e => {
@@ -522,6 +540,27 @@ export default function ScanPage() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* SAST Findings Summary */}
+          {sastFindings.length > 0 && (
+            <div className={styles.surfaceCard}>
+              <div className={styles.cardTitle}>SAST Findings</div>
+              <div className={styles.surfaceGrid}>
+                {(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const).map(sev => {
+                  const count = sastFindings.filter(f => f.severity === sev).length;
+                  const colors: Record<string, string> = {
+                    CRITICAL: '#dc2626', HIGH: '#ea580c', MEDIUM: '#ca8a04', LOW: '#16a34a',
+                  };
+                  return count > 0 ? (
+                    <div key={sev} className={styles.surfaceStat}>
+                      <span className={styles.surfaceNum} style={{ color: colors[sev] }}>{count}</span>
+                      <span className={styles.surfaceLabel}>{sev}</span>
+                    </div>
+                  ) : null;
+                })}
+              </div>
             </div>
           )}
 

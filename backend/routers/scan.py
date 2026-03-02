@@ -1,5 +1,8 @@
 import asyncio
 import json
+import os
+import shutil
+import tempfile
 import uuid
 from fastapi import APIRouter, HTTPException, Depends, Query
 from auth import get_current_user, decode_token
@@ -12,6 +15,8 @@ from models import (
 from pipeline.crawler import crawl
 from pipeline.scanner import build_surface_notes, audit_headers
 from pipeline.vuln_scanner import run_nuclei
+from pipeline.code_cloner import clone_repo
+from pipeline.sast_scanner import run_sast
 from agents.recon_agent import run_recon_agent
 from agents.orchestrator import run_all_exploit_agents
 from reporters.report_compiler import compile_report
@@ -56,6 +61,7 @@ def _push(scan_id: str, event: str, data: dict):
 
 async def _run_pipeline(scan_id: str):
     state = _scans[scan_id]
+    sast_tmp = None
     try:
         # ── Phase 1: Crawl ──────────────────────────────────────────────
         _push(scan_id, "phase", {"phase": "CRAWLING", "message": "Crawling target..."})
@@ -79,12 +85,47 @@ async def _run_pipeline(scan_id: str):
             "scanner_findings_count": len(scanner_findings),
         })
 
+        # ── Phase 3 (optional): SAST ────────────────────────────────────
+        if state.sast_config:
+            sast_tmp = tempfile.mkdtemp(prefix=f"sast_{scan_id[:8]}_")
+            try:
+                state.status = ScanStatus.SAST_CLONING
+                _push(scan_id, "phase", {"phase": "SAST_CLONING", "message": "Cloning repository for static analysis..."})
+                repo_path = await clone_repo(
+                    state.sast_config.repo_url,
+                    state.sast_config.pat,
+                    os.path.join(sast_tmp, "repo"),
+                )
+
+                state.status = ScanStatus.SAST_ANALYZING
+                _push(scan_id, "phase", {"phase": "SAST_ANALYZING", "message": "Running static analysis (Semgrep + npm audit)..."})
+                sast_findings = await run_sast(repo_path)
+                state.sast_findings = sast_findings
+                _push(scan_id, "sast_findings", {
+                    "count": len(sast_findings),
+                    "findings": [
+                        {
+                            "tool": f.tool,
+                            "rule_id": f.rule_id,
+                            "severity": f.severity.value,
+                            "file_path": f.file_path,
+                            "line_number": f.line_number,
+                            "message": f.message,
+                        }
+                        for f in sast_findings
+                    ],
+                })
+            except Exception as sast_err:
+                # SAST errors are non-fatal — log and continue
+                _push(scan_id, "phase", {"phase": "SAST_ANALYZING", "message": f"SAST warning: {sast_err} — continuing with DAST findings only."})
+
+        # ── Phase 4: Recon Agent ────────────────────────────────────────
         # Persist surface report
         asyncio.create_task(_sb_update_scan(scan_id, {"surface_report": surface.model_dump()}))
 
         # ── Phase 3: Recon Agent ────────────────────────────────────────
         _push(scan_id, "phase", {"phase": "SCANNING", "message": "Recon Agent assigning vulnerability investigations..."})
-        hypotheses = await run_recon_agent(surface)
+        hypotheses = await run_recon_agent(surface, state.sast_findings)
         state.hypotheses = hypotheses
         _push(scan_id, "hypotheses", {
             "count": len(hypotheses),
@@ -193,6 +234,10 @@ async def _run_pipeline(scan_id: str):
         asyncio.create_task(_sb_update_scan(scan_id, {"status": "ERROR", "error": str(e)}))
         _push(scan_id, "error", {"message": str(e)})
     finally:
+        # Clean up cloned repo temp dir
+        if sast_tmp and os.path.exists(sast_tmp):
+            shutil.rmtree(sast_tmp, ignore_errors=True)
+        # Signal SSE stream to end after short delay
         await asyncio.sleep(2)
         q = _event_queues.get(scan_id)
         if q:
@@ -206,7 +251,12 @@ async def _run_pipeline(scan_id: str):
 @router.post("/scan/start")
 async def start_scan(request: ScanRequest, _user: str = Depends(get_current_user)):
     scan_id = str(uuid.uuid4())
-    state = ScanState(scan_id=scan_id, target_url=str(request.url), user_id=_user)
+    state = ScanState(
+        scan_id=scan_id,
+        target_url=str(request.url),
+        sast_config=request.sast_config,
+        user_id=_user
+    )
     _scans[scan_id] = state
     _event_queues[scan_id] = asyncio.Queue()
 
