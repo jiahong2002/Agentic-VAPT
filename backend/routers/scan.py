@@ -4,7 +4,8 @@ import os
 import shutil
 import tempfile
 import uuid
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from auth import get_current_user
 from fastapi.responses import HTMLResponse, Response
 from sse_starlette.sse import EventSourceResponse
 from models import ScanRequest, ScanState, ScanStatus, AgentResult
@@ -16,19 +17,43 @@ from pipeline.sast_scanner import run_sast
 from agents.recon_agent import run_recon_agent
 from agents.orchestrator import run_all_exploit_agents
 from reporters.report_compiler import compile_report
+from supabase_client import get_supabase
 
 router = APIRouter()
 
 # In-memory store: scan_id → ScanState
 _scans: dict[str, ScanState] = {}
-# Event queues: scan_id → list of SSE events
+# Event queues: scan_id → asyncio.Queue
 _event_queues: dict[str, asyncio.Queue] = {}
+
+
+async def _sb_update_scan(scan_id: str, updates: dict):
+    """Fire-and-forget Supabase scan row update."""
+    try:
+        sb = await get_supabase()
+        await sb.table("scans").update(updates).eq("id", scan_id).execute()
+    except Exception:
+        pass
+
+
+async def _sb_push_event(scan_id: str, event: str, data: dict):
+    """Fire-and-forget Supabase scan_events insert."""
+    try:
+        sb = await get_supabase()
+        await sb.table("scan_events").insert({
+            "scan_id": scan_id,
+            "event": event,
+            "data": data,
+        }).execute()
+    except Exception:
+        pass
 
 
 def _push(scan_id: str, event: str, data: dict):
     q = _event_queues.get(scan_id)
     if q:
         q.put_nowait({"event": event, "data": json.dumps(data)})
+    asyncio.create_task(_sb_push_event(scan_id, event, data))
 
 
 async def _run_pipeline(scan_id: str):
@@ -41,6 +66,7 @@ async def _run_pipeline(scan_id: str):
 
         # ── Phase 2: Active Vulnerability Scan (Nuclei) ─────────────────
         state.status = ScanStatus.SCANNING
+        asyncio.create_task(_sb_update_scan(scan_id, {"status": "SCANNING"}))
         _push(scan_id, "phase", {"phase": "SCANNING", "message": "Running Nuclei active vulnerability scan..."})
         scanner_findings = await run_nuclei(state.target_url)
         surface.scanner_findings = scanner_findings
@@ -91,6 +117,10 @@ async def _run_pipeline(scan_id: str):
                 _push(scan_id, "phase", {"phase": "SAST_ANALYZING", "message": f"SAST warning: {sast_err} — continuing with DAST findings only."})
 
         # ── Phase 4: Recon Agent ────────────────────────────────────────
+        # Persist surface report
+        asyncio.create_task(_sb_update_scan(scan_id, {"surface_report": surface.model_dump()}))
+
+        # ── Phase 3: Recon Agent ────────────────────────────────────────
         _push(scan_id, "phase", {"phase": "SCANNING", "message": "Recon Agent assigning vulnerability investigations..."})
         hypotheses = await run_recon_agent(surface, state.sast_findings)
         state.hypotheses = hypotheses
@@ -109,8 +139,32 @@ async def _run_pipeline(scan_id: str):
             ],
         })
 
+        # Persist hypotheses
+        async def _insert_hypotheses():
+            try:
+                sb = await get_supabase()
+                rows = [
+                    {
+                        "id": h.id,
+                        "scan_id": scan_id,
+                        "title": h.title,
+                        "target_url": h.target_url,
+                        "attack_surface": h.attack_surface,
+                        "technique": h.technique,
+                        "attack_hints": h.attack_hints,
+                        "rationale": h.rationale,
+                        "severity_estimate": h.severity_estimate.value,
+                    }
+                    for h in hypotheses
+                ]
+                await sb.table("hypotheses").insert(rows).execute()
+            except Exception:
+                pass
+        asyncio.create_task(_insert_hypotheses())
+
         # ── Phase 4: Await human approval ──────────────────────────────
         state.status = ScanStatus.AWAITING_APPROVAL
+        asyncio.create_task(_sb_update_scan(scan_id, {"status": "AWAITING_APPROVAL"}))
         _push(scan_id, "phase", {"phase": "AWAITING_APPROVAL", "message": "Awaiting user authorization to proceed..."})
 
         # Wait for approval signal (set by /approve endpoint)
@@ -122,6 +176,7 @@ async def _run_pipeline(scan_id: str):
             return
 
         # ── Phase 5: Exploit Agents ─────────────────────────────────────
+        asyncio.create_task(_sb_update_scan(scan_id, {"status": "EXPLOITING"}))
         _push(scan_id, "phase", {"phase": "EXPLOITING", "message": f"Launching {len(hypotheses)} vulnerability investigation agents..."})
 
         async def agent_done_callback(result: AgentResult):
@@ -135,12 +190,34 @@ async def _run_pipeline(scan_id: str):
                 "steps_count": len(result.steps),
             })
 
+            async def _insert_agent_result():
+                try:
+                    sb = await get_supabase()
+                    await sb.table("agent_results").insert({
+                        "scan_id": scan_id,
+                        "hypothesis_id": result.hypothesis_id,
+                        "hypothesis_title": result.hypothesis_title,
+                        "technique": result.technique,
+                        "status": result.status.value,
+                        "severity": result.severity.value,
+                        "steps": [s.model_dump() for s in result.steps],
+                        "summary": result.summary,
+                        "remediation": result.remediation,
+                        "cvss_score": result.cvss_score,
+                        "screenshot_paths": result.screenshot_paths,
+                        "false_positive_reason": result.false_positive_reason,
+                    }).execute()
+                except Exception:
+                    pass
+            asyncio.create_task(_insert_agent_result())
+
         results = await run_all_exploit_agents(hypotheses, state, agent_done_callback)
         state.agent_results = results
 
         # ── Phase 6: Done ───────────────────────────────────────────────
         state.status = ScanStatus.DONE
         confirmed = sum(1 for r in results if r.status.value == "CONFIRMED")
+        asyncio.create_task(_sb_update_scan(scan_id, {"status": "DONE"}))
         _push(scan_id, "phase", {"phase": "DONE", "message": "All agents complete."})
         _push(scan_id, "done", {
             "total": len(results),
@@ -151,6 +228,7 @@ async def _run_pipeline(scan_id: str):
     except Exception as e:
         state.status = ScanStatus.ERROR
         state.error = str(e)
+        asyncio.create_task(_sb_update_scan(scan_id, {"status": "ERROR", "error": str(e)}))
         _push(scan_id, "error", {"message": str(e)})
     finally:
         # Clean up cloned repo temp dir
@@ -164,15 +242,28 @@ async def _run_pipeline(scan_id: str):
 
 
 @router.post("/scan/start")
-async def start_scan(request: ScanRequest):
+async def start_scan(request: ScanRequest, _user: str = Depends(get_current_user)):
     scan_id = str(uuid.uuid4())
     state = ScanState(
         scan_id=scan_id,
         target_url=str(request.url),
         sast_config=request.sast_config,
+        user_id=_user
     )
     _scans[scan_id] = state
     _event_queues[scan_id] = asyncio.Queue()
+
+    try:
+        sb = await get_supabase()
+        await sb.table("scans").insert({
+            "id": scan_id,
+            "user_id": _user,
+            "target_url": str(request.url),
+            "status": "CRAWLING",
+        }).execute()
+    except Exception:
+        pass
+
     asyncio.create_task(_run_pipeline(scan_id))
     return {"scan_id": scan_id}
 
@@ -197,23 +288,25 @@ async def scan_events(scan_id: str):
 
 
 @router.post("/scan/{scan_id}/approve")
-async def approve_scan(scan_id: str):
+async def approve_scan(scan_id: str, _user: str = Depends(get_current_user)):
     state = _scans.get(scan_id)
     if not state:
         raise HTTPException(status_code=404, detail="Scan not found")
     if state.status != ScanStatus.AWAITING_APPROVAL:
         raise HTTPException(status_code=400, detail="Scan is not awaiting approval")
     state.status = ScanStatus.EXPLOITING
+    asyncio.create_task(_sb_update_scan(scan_id, {"status": "EXPLOITING"}))
     return {"ok": True}
 
 
 @router.post("/scan/{scan_id}/cancel")
-async def cancel_scan(scan_id: str):
+async def cancel_scan(scan_id: str, _user: str = Depends(get_current_user)):
     state = _scans.get(scan_id)
     if not state:
         raise HTTPException(status_code=404, detail="Scan not found")
     state.status = ScanStatus.ERROR
     state.error = "Cancelled by user"
+    asyncio.create_task(_sb_update_scan(scan_id, {"status": "ERROR", "error": "Cancelled by user"}))
     return {"ok": True}
 
 
@@ -231,20 +324,20 @@ async def get_status(scan_id: str):
 
 
 @router.get("/scan/{scan_id}/report")
-async def get_report(scan_id: str):
+async def get_report(scan_id: str, _user: str = Depends(get_current_user)):
     state = _scans.get(scan_id)
     if not state:
         raise HTTPException(status_code=404, detail="Scan not found")
-    html = compile_report(state)
+    html = await compile_report(state)
     return HTMLResponse(content=html)
 
 
 @router.get("/scan/{scan_id}/report/pdf")
-async def get_report_pdf(scan_id: str):
+async def get_report_pdf(scan_id: str, _user: str = Depends(get_current_user)):
     state = _scans.get(scan_id)
     if not state:
         raise HTTPException(status_code=404, detail="Scan not found")
-    html = compile_report(state)
+    html = await compile_report(state)
     try:
         from playwright.async_api import async_playwright
         async with async_playwright() as p:
@@ -257,6 +350,25 @@ async def get_report_pdf(scan_id: str):
                 print_background=True,
             )
             await browser.close()
+
+        # Upload PDF to Supabase Storage (fire-and-forget)
+        async def _upload_pdf():
+            try:
+                sb = await get_supabase()
+                storage_path = f"{_user}/{scan_id}.pdf"
+                await sb.storage.from_("reports").upload(
+                    storage_path,
+                    pdf_bytes,
+                    {"content-type": "application/pdf", "upsert": "true"},
+                )
+                signed = await sb.storage.from_("reports").create_signed_url(storage_path, 60 * 60 * 24 * 365)
+                signed_url = signed.signed_url if hasattr(signed, "signed_url") else signed.get("signedURL", "")
+                if signed_url:
+                    await sb.table("scans").update({"report_pdf_url": signed_url}).eq("id", scan_id).execute()
+            except Exception:
+                pass
+        asyncio.create_task(_upload_pdf())
+
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
@@ -264,3 +376,21 @@ async def get_report_pdf(scan_id: str):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+
+
+@router.get("/scans")
+async def list_scans(_user: str = Depends(get_current_user)):
+    """Return the authenticated user's scan history (newest first)."""
+    try:
+        sb = await get_supabase()
+        result = await (
+            sb.table("scans")
+            .select("id, target_url, status, report_pdf_url, created_at, updated_at")
+            .eq("user_id", _user)
+            .order("created_at", desc=True)
+            .limit(50)
+            .execute()
+        )
+        return {"scans": result.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

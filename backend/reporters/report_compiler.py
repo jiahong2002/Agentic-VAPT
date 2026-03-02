@@ -1,5 +1,6 @@
 import os
 import base64
+import httpx
 from datetime import datetime
 from models import ScanState, AgentStatus, Severity
 
@@ -613,21 +614,33 @@ TEMPLATE_STR = r"""<!DOCTYPE html>
 </html>"""
 
 
-def compile_report(scan_state: ScanState) -> str:
+async def _load_screenshot(path: str, client: httpx.AsyncClient) -> str:
+    """Load a screenshot as base64, supporting HTTP URLs and local paths."""
+    try:
+        if path.startswith("http://") or path.startswith("https://"):
+            r = await client.get(path, timeout=10)
+            return base64.b64encode(r.content).decode()
+        elif os.path.exists(path):
+            with open(path, "rb") as f:
+                return base64.b64encode(f.read()).decode()
+    except Exception:
+        pass
+    return ""
+
+
+async def compile_report(scan_state: ScanState) -> str:
     """Compile all agent results into a detailed HTML report with embedded screenshots."""
     # Load screenshots as base64
     screenshots: dict[str, str] = {}
-    for result in scan_state.agent_results:
-        for path in result.screenshot_paths:
-            if path and os.path.exists(path) and path not in screenshots:
-                with open(path, "rb") as f:
-                    screenshots[path] = base64.b64encode(f.read()).decode()
+    async with httpx.AsyncClient() as client:
+        for result in scan_state.agent_results:
+            for path in result.screenshot_paths:
+                if path and path not in screenshots:
+                    screenshots[path] = await _load_screenshot(path, client)
 
-        for step in result.steps:
-            if step.screenshot_path and os.path.exists(step.screenshot_path):
-                if step.screenshot_path not in screenshots:
-                    with open(step.screenshot_path, "rb") as f:
-                        screenshots[step.screenshot_path] = base64.b64encode(f.read()).decode()
+            for step in result.steps:
+                if step.screenshot_path and step.screenshot_path not in screenshots:
+                    screenshots[step.screenshot_path] = await _load_screenshot(step.screenshot_path, client)
 
     # Count severities
     severity_counts = {s.value: 0 for s in Severity}

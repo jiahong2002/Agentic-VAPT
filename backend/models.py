@@ -98,6 +98,7 @@ class CodeFinding(BaseModel):
 
 class ScanState(BaseModel):
     scan_id: str
+    user_id: str = ""
     target_url: str
     status: ScanStatus = ScanStatus.CRAWLING
     surface_report: Optional[SurfaceReport] = None
