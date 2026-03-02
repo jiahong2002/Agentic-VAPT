@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
+import { apiFetch, logout, getUsername } from '../../lib/auth';
 
 // ─── Network Topology Canvas ─────────────────────────────────────────────────
 interface Node {
@@ -14,11 +15,14 @@ interface Node {
   pulseSpeed: number;
 }
 
-function NetworkCanvas() {
+function NetworkCanvas({ triggered }: { triggered: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouse = useRef({ x: -1000, y: -1000 });
   const nodesRef = useRef<Node[]>([]);
   const animRef = useRef<number>(0);
+  const triggerRef = useRef(triggered);
+
+  useEffect(() => { triggerRef.current = triggered; }, [triggered]);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -48,6 +52,8 @@ function NetworkCanvas() {
     };
     window.addEventListener('mousemove', onMouseMove);
 
+    let scanRed = 0;
+
     const draw = () => {
       const W = canvas.width, H = canvas.height;
       ctx.clearRect(0, 0, W, H);
@@ -57,6 +63,10 @@ function NetworkCanvas() {
       bg.addColorStop(1, 'rgba(4,8,16,1)');
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, W, H);
+
+      if (triggerRef.current) {
+        scanRed = Math.min(scanRed + 0.015, 1);
+      }
 
       const nodes = nodesRef.current;
       const mx = mouse.current.x, my = mouse.current.y;
@@ -88,10 +98,13 @@ function NetworkCanvas() {
           const d = Math.sqrt(dx * dx + dy * dy);
           if (d < maxDist) {
             const alpha = (1 - d / maxDist) * 0.35;
+            const r = scanRed > 0 ? Math.round(scanRed * 200) : 6;
+            const g = scanRed > 0 ? Math.round((1 - scanRed) * 182) : 182;
+            const bl = scanRed > 0 ? Math.round((1 - scanRed) * 212) : 212;
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
             ctx.lineTo(b.x, b.y);
-            ctx.strokeStyle = `rgba(6,182,212,${alpha})`;
+            ctx.strokeStyle = `rgba(${r},${g},${bl},${alpha})`;
             ctx.lineWidth = 0.8;
             ctx.stroke();
           }
@@ -100,9 +113,12 @@ function NetworkCanvas() {
 
       nodes.forEach(n => {
         const pulseMag = 0.5 + 0.5 * Math.sin(n.pulse);
+        const r = scanRed > 0 ? Math.round(220 * scanRed + 6 * (1 - scanRed)) : 6;
+        const g = scanRed > 0 ? Math.round(30 * scanRed + 182 * (1 - scanRed)) : 182;
+        const bl = scanRed > 0 ? Math.round(30 * scanRed + 212 * (1 - scanRed)) : 212;
 
         const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.radius * 6);
-        grd.addColorStop(0, `rgba(6,182,212,${0.15 * pulseMag})`);
+        grd.addColorStop(0, `rgba(${r},${g},${bl},${0.15 * pulseMag})`);
         grd.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.radius * 6, 0, Math.PI * 2);
@@ -111,7 +127,7 @@ function NetworkCanvas() {
 
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.radius * pulseMag, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(6,182,212,0.9)`;
+        ctx.fillStyle = `rgba(${r},${g},${bl},0.9)`;
         ctx.fill();
       });
 
@@ -131,16 +147,50 @@ function NetworkCanvas() {
 }
 
 
-// ─── Landing Page ─────────────────────────────────────────────────────────────
-export default function LandingPage() {
+// ─── Dashboard Page ───────────────────────────────────────────────────────────
+export default function DashboardPage() {
   const router = useRouter();
+  const [url, setUrl] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [triggered, setTriggered] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!agreed) { setError('You must confirm authorization to proceed.'); return; }
+    if (!url.trim()) { setError('Please enter a target URL.'); return; }
+    setError('');
+    setTriggered(true);
+    setLoading(true);
+
+    try {
+      const res = await apiFetch('/api/scan/start', {
+        method: 'POST',
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      if (!res.ok) throw new Error('Failed to start scan');
+      const { scan_id } = await res.json();
+      await new Promise(r => setTimeout(r, 800));
+      router.push(`/scan/${scan_id}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to connect to backend');
+      setLoading(false);
+      setTriggered(false);
+    }
+  };
 
   return (
     <main className={styles.main}>
-      <NetworkCanvas />
+      <NetworkCanvas triggered={triggered} />
 
       <div className={styles.overlay}>
         <div className={styles.hero}>
+          <div className={styles.userBar}>
+            <span className={styles.userBarName}>{getUsername()}</span>
+            <button className={styles.logoutBtn} onClick={logout}>Sign out</button>
+          </div>
+
           <div className={styles.tag}>
             <span className={styles.tagDot} />
             AGENTIC PENETRATION TESTING
@@ -156,20 +206,51 @@ export default function LandingPage() {
             verify each one, and deliver a full PoC report with screenshots.
           </p>
 
-          <div className={styles.ctaRow}>
-            <button
-              className={styles.ctaSecondary}
-              onClick={() => router.push('/login')}
-            >
-              Sign in →
-            </button>
-            <button
-              className={styles.ctaPrimary}
-              onClick={() => router.push('/signup')}
-            >
-              Get started free →
-            </button>
-          </div>
+          <form className={styles.form} onSubmit={handleSubmit}>
+            <div className={styles.inputRow}>
+              <div className={styles.inputWrapper}>
+                <span className={styles.inputIcon}>⌖</span>
+                <input
+                  id="target-url"
+                  type="url"
+                  className={styles.input}
+                  placeholder="https://target.example.com"
+                  value={url}
+                  onChange={e => setUrl(e.target.value)}
+                  disabled={loading}
+                  required
+                />
+              </div>
+              <button
+                id="start-scan-btn"
+                type="submit"
+                className={styles.cta}
+                disabled={loading || !agreed}
+              >
+                {loading ? (
+                  <span className={styles.spinner} />
+                ) : (
+                  <>Scan Target <span className={styles.arrow}>→</span></>
+                )}
+              </button>
+            </div>
+
+            <label className={styles.authLabel}>
+              <input
+                type="checkbox"
+                className={styles.checkbox}
+                checked={agreed}
+                onChange={e => setAgreed(e.target.checked)}
+                disabled={loading}
+                id="auth-confirm"
+              />
+              <span>
+                I confirm I have written authorization to test this target and take full legal responsibility for this scan.
+              </span>
+            </label>
+
+            {error && <div className={styles.errorMsg}>{error}</div>}
+          </form>
 
           <div className={styles.stats}>
             <div className={styles.statItem}>

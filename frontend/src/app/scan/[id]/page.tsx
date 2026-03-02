@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import styles from './scan.module.css';
+import { apiFetch } from '../../../lib/auth';
 
 type Phase = 'CRAWLING' | 'SCANNING' | 'AWAITING_APPROVAL' | 'EXPLOITING' | 'DONE' | 'ERROR';
 type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
@@ -142,12 +143,12 @@ function ApprovalGate({ scanId, hypotheses, onApproved, onCancel }: {
 
   const approve = async () => {
     setLoading(true);
-    await fetch(`http://localhost:8000/api/scan/${scanId}/approve`, { method: 'POST' });
+    await apiFetch(`/api/scan/${scanId}/approve`, { method: 'POST' });
     onApproved();
   };
 
   const cancel = async () => {
-    await fetch(`http://localhost:8000/api/scan/${scanId}/cancel`, { method: 'POST' });
+    await apiFetch(`/api/scan/${scanId}/cancel`, { method: 'POST' });
     onCancel();
   };
 
