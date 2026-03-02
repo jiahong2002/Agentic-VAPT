@@ -144,6 +144,94 @@
   margin: 0 16px;
 }
 
+/* ── SAST section ───────────────────────────────────────────── */
+.sastSection {
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.sastToggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(139, 92, 246, 0.05);
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.sastToggle:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.sastToggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sastToggleIcon {
+  font-size: 12px;
+  color: #7c3aed;
+  width: 14px;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.sastToggleIconOn {
+  color: #a78bfa;
+}
+
+.sastToggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #94a3b8;
+  flex: 1;
+}
+
+.sastBadge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  text-transform: uppercase;
+}
+
+.sastToggleDesc {
+  font-size: 11px;
+  color: #475569;
+  margin-left: auto;
+}
+
+.sastFields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-top: 1px solid rgba(139, 92, 246, 0.12);
+  background: rgba(7, 11, 20, 0.5);
+}
+
+.fieldOptional {
+  font-size: 10px;
+  font-weight: 400;
+  color: #334155;
+  margin-left: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 /* ── Authorization checkbox ─────────────────────────────────── */
 .authLabel {
   display: flex;
