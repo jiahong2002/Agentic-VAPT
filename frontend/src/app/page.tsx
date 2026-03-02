@@ -164,20 +164,29 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [triggered, setTriggered] = useState(false);
+  const [mode, setMode] = useState<'dast' | 'dast+sast'>('dast');
+  const [repoUrl, setRepoUrl] = useState('');
+  const [repoPat, setRepoPat] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!agreed) { setError('You must confirm authorization to proceed.'); return; }
     if (!url.trim()) { setError('Please enter a target URL.'); return; }
+    if (mode === 'dast+sast' && !repoUrl.trim()) { setError('Please enter the Git repository URL.'); return; }
     setError('');
     setTriggered(true);
     setLoading(true);
+
+    const body: Record<string, unknown> = { url: url.trim() };
+    if (mode === 'dast+sast') {
+      body.sast_config = { repo_url: repoUrl.trim(), pat: repoPat.trim() || null };
+    }
 
     try {
       const res = await fetch('http://localhost:8000/api/scan/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('Failed to start scan');
       const { scan_id } = await res.json();
@@ -212,6 +221,26 @@ export default function HomePage() {
           </p>
 
           <form className={styles.form} onSubmit={handleSubmit}>
+            {/* Mode toggle */}
+            <div className={styles.modeToggle}>
+              <button
+                type="button"
+                className={`${styles.modeBtn} ${mode === 'dast' ? styles.modeBtnActive : ''}`}
+                onClick={() => setMode('dast')}
+                disabled={loading}
+              >
+                DAST Only
+              </button>
+              <button
+                type="button"
+                className={`${styles.modeBtn} ${mode === 'dast+sast' ? styles.modeBtnActive : ''}`}
+                onClick={() => setMode('dast+sast')}
+                disabled={loading}
+              >
+                DAST + SAST
+              </button>
+            </div>
+
             <div className={styles.inputRow}>
               <div className={styles.inputWrapper}>
                 <span className={styles.inputIcon}>⌖</span>
@@ -239,6 +268,34 @@ export default function HomePage() {
                 )}
               </button>
             </div>
+
+            {mode === 'dast+sast' && (
+              <div className={styles.sastFields}>
+                <div className={styles.inputWrapper}>
+                  <span className={styles.inputIcon}>⌥</span>
+                  <input
+                    type="url"
+                    className={styles.input}
+                    placeholder="https://github.com/user/repo"
+                    value={repoUrl}
+                    onChange={e => setRepoUrl(e.target.value)}
+                    disabled={loading}
+                    required={mode === 'dast+sast'}
+                  />
+                </div>
+                <div className={styles.inputWrapper}>
+                  <span className={styles.inputIcon}>🔑</span>
+                  <input
+                    type="password"
+                    className={styles.input}
+                    placeholder="Personal Access Token (optional, for private repos)"
+                    value={repoPat}
+                    onChange={e => setRepoPat(e.target.value)}
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+            )}
 
             <label className={styles.authLabel}>
               <input

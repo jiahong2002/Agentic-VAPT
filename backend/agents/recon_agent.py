@@ -1,7 +1,7 @@
 import json
 import uuid
 from openai import AsyncOpenAI
-from models import Hypothesis, SurfaceReport, Severity
+from models import CodeFinding, Hypothesis, SurfaceReport, Severity
 from pipeline.scanner import build_surface_notes
 from dotenv import load_dotenv
 
@@ -71,15 +71,28 @@ Order by severity (highest first).
 """
 
 
-async def run_recon_agent(surface: SurfaceReport) -> list[Hypothesis]:
+def _build_sast_notes(sast_findings: list[CodeFinding]) -> str:
+    """Format SAST findings as a text block for the recon prompt."""
+    if not sast_findings:
+        return ""
+    lines = ["\n\n=== STATIC ANALYSIS FINDINGS (from source code) ==="]
+    for f in sast_findings[:50]:  # cap at 50 to avoid token bloat
+        loc = f"{f.file_path}:{f.line_number}" if f.line_number else f.file_path
+        snippet = f" — `{f.code_snippet.strip()}`" if f.code_snippet else ""
+        lines.append(f"[{f.tool}] {f.severity.value}: {f.message} ({loc}){snippet}")
+    return "\n".join(lines)
+
+
+async def run_recon_agent(surface: SurfaceReport, sast_findings: list[CodeFinding] = []) -> list[Hypothesis]:
     """Run the Recon Agent to generate per-technique investigation assignments."""
     surface_summary = build_surface_notes(surface)
+    sast_notes = _build_sast_notes(sast_findings)
 
     response = await _get_client().chat.completions.create(
         model="gpt-5",
         messages=[
             {"role": "system", "content": RECON_SYSTEM_PROMPT},
-            {"role": "user", "content": f"Here is the surface report:\n\n{surface_summary}"},
+            {"role": "user", "content": f"Here is the surface report:\n\n{surface_summary}{sast_notes}"},
         ],
         response_format={"type": "json_object"},
     )

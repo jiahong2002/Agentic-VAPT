@@ -3,13 +3,21 @@ from typing import Optional
 from enum import Enum
 
 
+class SASTConfig(BaseModel):
+    repo_url: str
+    pat: Optional[str] = None
+
+
 class ScanRequest(BaseModel):
     url: str
+    sast_config: Optional[SASTConfig] = None
 
 
 class ScanStatus(str, Enum):
     CRAWLING = "CRAWLING"
     SCANNING = "SCANNING"
+    SAST_CLONING = "SAST_CLONING"
+    SAST_ANALYZING = "SAST_ANALYZING"
     AWAITING_APPROVAL = "AWAITING_APPROVAL"
     EXPLOITING = "EXPLOITING"
     DONE = "DONE"
@@ -78,6 +86,16 @@ class AgentResult(BaseModel):
     false_positive_reason: Optional[str] = None
 
 
+class CodeFinding(BaseModel):
+    tool: str  # "semgrep" | "npm_audit"
+    rule_id: str
+    severity: Severity
+    file_path: str
+    line_number: Optional[int] = None
+    message: str
+    code_snippet: Optional[str] = None
+
+
 class ScanState(BaseModel):
     scan_id: str
     target_url: str
@@ -85,4 +103,6 @@ class ScanState(BaseModel):
     surface_report: Optional[SurfaceReport] = None
     hypotheses: list[Hypothesis] = []
     agent_results: list[AgentResult] = []
+    sast_config: Optional[SASTConfig] = None
+    sast_findings: list[CodeFinding] = []
     error: Optional[str] = None
