@@ -2,7 +2,7 @@
 
 <h1 align="center"><b>⌖&nbsp; A G E N T V A P T</b></h1>
 
-**AI-Powered Vulnerability Assessment & Penetration Testing**
+**Autonomous AI for controlled Web Vulnerability Scanning & Testing**
 
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
