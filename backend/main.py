@@ -2,9 +2,7 @@ import logging
 import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from routers import scan
-import os
+from routers import scan, auth
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,8 +25,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve screenshot files
-os.makedirs("screenshots", exist_ok=True)
-app.mount("/screenshots", StaticFiles(directory="screenshots"), name="screenshots")
-
 app.include_router(scan.router, prefix="/api")
+app.include_router(auth.router)

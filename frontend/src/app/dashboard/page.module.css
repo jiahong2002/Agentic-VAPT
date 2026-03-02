@@ -1,0 +1,316 @@
+.page {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 24px;
+}
+
+.container {
+  width: 100%;
+  max-width: 600px;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.header {
+  margin-bottom: 28px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 8px;
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.6;
+}
+
+/* ── Card ───────────────────────────────────────────────────── */
+.card {
+  background: rgba(14, 20, 38, 0.8);
+  border: 1px solid rgba(6, 182, 212, 0.12);
+  border-radius: 16px;
+  padding: 28px;
+}
+
+/* ── Form ───────────────────────────────────────────────────── */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.inputWrapper {
+  position: relative;
+}
+
+.inputIcon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #06b6d4;
+  font-size: 18px;
+  pointer-events: none;
+  line-height: 1;
+}
+
+.input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px 0 42px;
+  background: rgba(7, 11, 20, 0.8);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+  border-radius: 10px;
+  color: #e2e8f0;
+  font-size: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.input:focus {
+  border-color: #06b6d4;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+}
+
+.input::placeholder {
+  color: #334155;
+}
+
+/* ── Phase steps ────────────────────────────────────────────── */
+.phases {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 16px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.phaseItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.phaseNum {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: #06b6d4;
+  opacity: 0.7;
+  min-width: 22px;
+}
+
+.phaseName {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  line-height: 1.3;
+}
+
+.phaseDesc {
+  font-size: 11px;
+  color: #334155;
+  line-height: 1.3;
+}
+
+.phaseDivider {
+  width: 1px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 0 16px;
+}
+
+/* ── SAST section ───────────────────────────────────────────── */
+.sastSection {
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.sastToggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(139, 92, 246, 0.05);
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.sastToggle:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.sastToggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sastToggleIcon {
+  font-size: 12px;
+  color: #7c3aed;
+  width: 14px;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.sastToggleIconOn {
+  color: #a78bfa;
+}
+
+.sastToggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #94a3b8;
+  flex: 1;
+}
+
+.sastBadge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  text-transform: uppercase;
+}
+
+.sastToggleDesc {
+  font-size: 11px;
+  color: #475569;
+  margin-left: auto;
+}
+
+.sastFields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-top: 1px solid rgba(139, 92, 246, 0.12);
+  background: rgba(7, 11, 20, 0.5);
+}
+
+.fieldOptional {
+  font-size: 10px;
+  font-weight: 400;
+  color: #334155;
+  margin-left: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ── Authorization checkbox ─────────────────────────────────── */
+.authLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.authLabel strong {
+  color: #64748b;
+}
+
+.checkbox {
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  margin-top: 2px;
+  accent-color: #06b6d4;
+  cursor: pointer;
+}
+
+/* ── Error ──────────────────────────────────────────────────── */
+.errorMsg {
+  color: #f87171;
+  font-size: 13px;
+  padding: 10px 14px;
+  background: rgba(239, 68, 68, 0.07);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+}
+
+/* ── CTA button ─────────────────────────────────────────────── */
+.cta {
+  height: 48px;
+  padding: 0 24px;
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+  color: #000;
+  font-size: 14px;
+  font-weight: 700;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.25);
+  font-family: inherit;
+}
+
+.cta:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+}
+
+.cta:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.arrow {
+  font-size: 16px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(0, 0, 0, 0.3);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
