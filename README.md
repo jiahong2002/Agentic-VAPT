@@ -1,8 +1,6 @@
 <div align="center">
 
-```
-  ⌖  A G E N T V A P T
-```
+<pre align="center">⌖  A G E N T V A P T</pre>
 
 **AI-Powered Vulnerability Assessment & Penetration Testing**
 
