@@ -208,13 +208,13 @@ Both services start automatically — backend on `:8000`, frontend on `:3000`.
 
 Visit `http://localhost:3000`
 
-### Test Target (DVWA)
+### Test Target (OWASP Juice Shop)
 
 ```bash
-docker run -d -p 80:80 vulnerables/web-dvwa
+docker run -d -p 3001:3000 bkimminich/juice-shop
 ```
 
-Then scan `http://localhost:80` — DVWA is intentionally vulnerable and great for verifying agent accuracy.
+Then scan `http://localhost:3001` — Juice Shop is an intentionally vulnerable Node.js/Angular app covering SQL injection, XSS, broken access control, and more.
 
 ---
 
