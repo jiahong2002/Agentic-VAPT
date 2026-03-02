@@ -94,8 +94,7 @@ docker run -d -p 80:80 vulnerables/web-dvwa
 
 ```bash
 cd backend
-source venv/bin/activate
-uvicorn main:app --reload
+source venv/bin/activate && pip install -r requirements.txt && python3 -m uvicorn main:app --reload --port 8000
 # Runs on http://localhost:8000
 ```
 
