@@ -29,6 +29,7 @@ create table public.scans (
   status         text not null default 'CRAWLING'
                    check (status in ('CRAWLING','SCANNING','AWAITING_APPROVAL','EXPLOITING','DONE','ERROR')),
   surface_report jsonb,          -- SurfaceReport blob (urls, forms, headers, tech stack, etc.)
+  report_pdf_url text,           -- Supabase Storage signed URL for the generated PDF
   error          text,
   created_at     timestamptz default now(),
   updated_at     timestamptz default now()
@@ -204,5 +205,29 @@ create policy "screenshots: read own"
   on storage.objects for select
   using (
     bucket_id = 'screenshots'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+
+-- ── Storage bucket for PDF reports ───────────────────────────
+-- Creates a private 'reports' bucket (max 50 MB per file).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'reports',
+  'reports',
+  false,
+  52428800,   -- 50 MB
+  array['application/pdf']
+)
+on conflict (id) do nothing;
+
+create policy "reports: upload service"
+  on storage.objects for insert
+  with check (bucket_id = 'reports');
+
+create policy "reports: read own"
+  on storage.objects for select
+  using (
+    bucket_id = 'reports'
     and auth.uid()::text = (storage.foldername(name))[1]
   );
