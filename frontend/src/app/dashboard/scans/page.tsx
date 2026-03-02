@@ -130,7 +130,7 @@ export default function ScansPage() {
                       <div className={styles.actions}>
                         {scan.status === 'DONE' && (
                           <button
-                            className={styles.actionBtn}
+                            className={`${styles.actionBtn} ${styles.actionBtnReport}`}
                             onClick={() => router.push(`/scan/${scan.id}/report`)}
                           >
                             View Report
@@ -143,16 +143,6 @@ export default function ScansPage() {
                           >
                             View Live
                           </button>
-                        )}
-                        {scan.report_pdf_url && (
-                          <a
-                            className={`${styles.actionBtn} ${styles.actionBtnPdf}`}
-                            href={scan.report_pdf_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            PDF
-                          </a>
                         )}
                       </div>
                     </td>

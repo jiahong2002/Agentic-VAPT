@@ -76,7 +76,7 @@ async def run_recon_agent(surface: SurfaceReport) -> list[Hypothesis]:
     surface_summary = build_surface_notes(surface)
 
     response = await _get_client().chat.completions.create(
-        model="gpt-5",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": RECON_SYSTEM_PROMPT},
             {"role": "user", "content": f"Here is the surface report:\n\n{surface_summary}"},

@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import styles from './scan.module.css';
-import { apiFetch } from '../../../lib/auth';
+import { apiFetch, API_BASE, getToken } from '../../../lib/auth';
 
 type Phase = 'CRAWLING' | 'SCANNING' | 'AWAITING_APPROVAL' | 'EXPLOITING' | 'DONE' | 'ERROR';
 type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
@@ -66,9 +67,15 @@ function urlPath(url: string): string {
 }
 
 // ─── Exploit Progress Bar ─────────────────────────────────────────────────────
-function ExploitProgress({ total, completed }: { total: number; completed: number }) {
-  const [elapsed, setElapsed] = useState(0);
-  const startRef = useRef<number>(Date.now());
+function ExploitProgress({ total, completed, startTime }: { total: number; completed: number; startTime?: number }) {
+  const startRef = useRef<number>(startTime ?? Date.now());
+  const [elapsed, setElapsed] = useState(() =>
+    startTime ? Math.floor((Date.now() - startTime) / 1000) : 0
+  );
+
+  useEffect(() => {
+    if (startTime) startRef.current = startTime;
+  }, [startTime]);
 
   useEffect(() => {
     const id = setInterval(() => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)), 1000);
@@ -292,13 +299,80 @@ export default function ScanPage() {
   const [doneStats, setDoneStats] = useState({ total: 0, confirmed: 0 });
   const [logs, setLogs] = useState<string[]>([]);
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
+  const [stateLoaded, setStateLoaded] = useState(false);
+  const [scanActive, setScanActive] = useState(true);
+  const [exploitStartTime, setExploitStartTime] = useState<number | undefined>(undefined);
   const logsRef = useRef<HTMLDivElement>(null);
 
   const addLog = (msg: string) => setLogs(prev => [...prev.slice(-50), msg]);
 
+  // ── Step 1: Fetch snapshot to rehydrate on reconnect ─────────────────────
   useEffect(() => {
     if (!scanId) return;
-    const es = new EventSource(`http://localhost:8000/api/scan/${scanId}/events`);
+    apiFetch(`/api/scan/${scanId}/state`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data) return;
+        const status = data.status as Phase;
+        setPhase(status);
+
+        // Restore a sensible status message
+        const phaseMessages: Partial<Record<Phase, string>> = {
+          CRAWLING: 'Crawling target...',
+          SCANNING: 'Running recon agent...',
+          AWAITING_APPROVAL: 'Awaiting exploit authorization...',
+          EXPLOITING: 'Running exploit agents...',
+          DONE: 'Scan complete.',
+          ERROR: 'Scan ended with an error.',
+        };
+        setMessage(phaseMessages[status] ?? status);
+
+        if (data.surface) setSurface(data.surface);
+        if (data.hypotheses?.length) setHypotheses(data.hypotheses);
+        if (data.agent_results?.length) {
+          const map = new Map<string, AgentResult>();
+          for (const r of data.agent_results) map.set(r.hypothesis_id, r);
+          setResults(map);
+        }
+        if (data.done_stats) {
+          setDone(true);
+          setDoneStats(data.done_stats);
+        }
+        if (status === 'AWAITING_APPROVAL' && data.hypotheses?.length) {
+          setShowApproval(true);
+        }
+
+        // Populate log from snapshot so it isn't blank on reconnect
+        const syntheticLogs: string[] = [];
+        if (data.surface) {
+          syntheticLogs.push(
+            `[Crawl] ${data.surface.urls_found} URLs, ${data.surface.forms_found} forms` +
+            (data.surface.tech_stack?.length ? `, stack: ${data.surface.tech_stack.join(', ')}` : '')
+          );
+          if ((data.surface.header_issues ?? 0) > 0)
+            syntheticLogs.push(`[Scan] ${data.surface.header_issues} security header issues detected`);
+        }
+        if (data.hypotheses?.length)
+          syntheticLogs.push(`[Recon] ${data.hypotheses.length} vulnerability investigations assigned`);
+        for (const r of (data.agent_results ?? []))
+          syntheticLogs.push(`[Agent] ${r.title} → ${r.status} (${r.severity})`);
+        if (syntheticLogs.length) setLogs(syntheticLogs);
+
+        // Restore exploit elapsed timer from sessionStorage
+        const stored = sessionStorage.getItem(`exploit_start_${scanId}`);
+        if (stored) setExploitStartTime(parseInt(stored));
+
+        const active = !['DONE', 'ERROR'].includes(status);
+        setScanActive(active);
+      })
+      .catch(() => {})
+      .finally(() => setStateLoaded(true));
+  }, [scanId]);
+
+  // ── Step 2: Connect to SSE only for still-running scans ───────────────────
+  useEffect(() => {
+    if (!scanId || !stateLoaded || !scanActive) return;
+    const es = new EventSource(`${API_BASE}/api/scan/${scanId}/events?token=${encodeURIComponent(getToken() ?? '')}`);
 
     es.addEventListener('phase', e => {
       const d = JSON.parse(e.data);
@@ -306,6 +380,14 @@ export default function ScanPage() {
       setMessage(d.message);
       addLog(`[Phase] ${d.message}`);
       if (d.phase === 'AWAITING_APPROVAL') setShowApproval(true);
+      if (d.phase === 'EXPLOITING') {
+        const key = `exploit_start_${scanId}`;
+        if (!sessionStorage.getItem(key)) {
+          const now = Date.now();
+          sessionStorage.setItem(key, String(now));
+          setExploitStartTime(now);
+        }
+      }
     });
 
     es.addEventListener('surface', e => {
@@ -331,6 +413,7 @@ export default function ScanPage() {
       setDone(true);
       setDoneStats(d);
       setPhase('DONE');
+      setScanActive(false);
       addLog(`[Done] ${d.confirmed}/${d.total} vulnerabilities confirmed`);
     });
 
@@ -342,12 +425,10 @@ export default function ScanPage() {
       es.close();
     });
 
-    es.onerror = () => {
-      if (done) es.close();
-    };
+    es.onerror = () => { es.close(); };
 
     return () => es.close();
-  }, [scanId]);
+  }, [scanId, stateLoaded, scanActive]);
 
   useEffect(() => {
     if (logsRef.current) {
@@ -376,9 +457,16 @@ export default function ScanPage() {
     <div className={styles.page}>
       {/* Header */}
       <header className={styles.header}>
-        <div className={styles.headerCenter}>
-          <span className={styles.logoText}>PenTest Agent</span>
-        </div>
+        <Link href="/dashboard" className={styles.logoLink}>
+          <span className={styles.logoIcon}>⌖</span>
+          AgentVAPT
+        </Link>
+        {scanActive && (
+          <div className={styles.runningBadge}>
+            <span className={styles.runningDot} />
+            Running in background
+          </div>
+        )}
         <div className={styles.scanId}>
           <span className={styles.scanIdLabel}>SCAN</span>
           <code className={styles.scanIdCode}>{scanId?.slice(0, 8)}</code>
@@ -500,7 +588,7 @@ export default function ScanPage() {
 
           {/* Exploit progress bar — visible during active testing */}
           {phase === 'EXPLOITING' && hypotheses.length > 0 && !done && (
-            <ExploitProgress total={hypotheses.length} completed={results.size} />
+            <ExploitProgress total={hypotheses.length} completed={results.size} startTime={exploitStartTime} />
           )}
 
           {/* URL Tab Bar — appears once hypotheses are available */}

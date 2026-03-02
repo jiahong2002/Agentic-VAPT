@@ -4,8 +4,7 @@ from agents.exploit_agent import run_exploit_agent
 from typing import Callable, Awaitable
 
 # Limit concurrent Playwright browsers and OpenAI API calls.
-# 2 keeps rate-limit pressure manageable.
-AGENT_CONCURRENCY = 2
+AGENT_CONCURRENCY = 3
 
 
 async def run_all_exploit_agents(
