@@ -376,7 +376,6 @@ export default function ScanPage() {
     <div className={styles.page}>
       {/* Header */}
       <header className={styles.header}>
-        <button className={styles.backBtn} onClick={() => router.push('/')}>← Back</button>
         <div className={styles.headerCenter}>
           <span className={styles.logoText}>PenTest Agent</span>
         </div>
